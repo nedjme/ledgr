@@ -6,12 +6,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  Sheet,
+  SheetContent,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { createClient } from "@/lib/supabase/client";
 
 type EditableAccount = {
@@ -80,12 +80,12 @@ export function EditAccountDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Edit account</DialogTitle>
-        </DialogHeader>
-        <form className="space-y-4" onSubmit={onSubmit}>
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent>
+        <SheetHeader>
+          <SheetTitle>Edit account</SheetTitle>
+        </SheetHeader>
+        <form className="flex flex-1 flex-col gap-4" onSubmit={onSubmit}>
           <div className="space-y-1.5">
             <Label htmlFor="edit_account_name">Name</Label>
             <Input id="edit_account_name" name="name" defaultValue={account.name} required />
@@ -115,7 +115,7 @@ export function EditAccountDialog({
             The balance this account had before you started tracking it here.
           </p>
           {error && <p className="text-sm text-destructive">{error}</p>}
-          <DialogFooter className="sm:justify-between">
+          <SheetFooter className="sm:justify-between">
             <Button
               type="button"
               variant="ghost"
@@ -128,9 +128,9 @@ export function EditAccountDialog({
             <Button type="submit" disabled={saving}>
               {saving ? "Saving..." : "Save"}
             </Button>
-          </DialogFooter>
+          </SheetFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </SheetContent>
+    </Sheet>
   );
 }

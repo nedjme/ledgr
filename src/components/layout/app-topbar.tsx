@@ -1,16 +1,18 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { PanelLeft } from "lucide-react";
+import { usePathname, useRouter } from "next/navigation";
+import { PanelLeft, LogOut } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { createClient } from "@/lib/supabase/client";
 
 function initialsOf(name: string) {
   return name
@@ -27,8 +29,7 @@ const TITLES: { test: (path: string) => boolean; title: string }[] = [
   { test: (p) => p.startsWith("/accounts/import"), title: "Import statement" },
   { test: (p) => p.startsWith("/accounts"), title: "Accounts" },
   { test: (p) => p.startsWith("/transactions"), title: "Transactions" },
-  { test: (p) => p.startsWith("/settings/categories"), title: "Categories" },
-  { test: (p) => p.startsWith("/settings"), title: "Household settings" },
+  { test: (p) => p.startsWith("/settings"), title: "Settings" },
 ];
 
 export function AppTopbar({
@@ -39,6 +40,8 @@ export function AppTopbar({
   onToggleSidebar: () => void;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const supabase = createClient();
   const title = TITLES.find((t) => t.test(pathname))?.title ?? "Ledgr";
 
   return (
@@ -71,10 +74,19 @@ export function AppTopbar({
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           <DropdownMenuItem render={<Link href="/settings/household" />}>
-            Household settings
+            Settings
           </DropdownMenuItem>
-          <DropdownMenuItem render={<Link href="/settings/categories" />}>
-            Categories
+          <DropdownMenuSeparator />
+          <DropdownMenuItem
+            variant="destructive"
+            onClick={async () => {
+              await supabase.auth.signOut();
+              router.push("/login");
+              router.refresh();
+            }}
+          >
+            <LogOut className="size-4" />
+            Sign out
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

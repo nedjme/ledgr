@@ -1,18 +1,30 @@
+import { headers } from "next/headers";
 import { requireUser, getHousehold } from "@/lib/data";
 import { createClient } from "@/lib/supabase/server";
 import { HouseholdSettings } from "@/components/household-settings";
 import { ProfileSettings } from "@/components/profile-settings";
+import { CategoryManager } from "@/components/category-manager";
 
 export default async function HouseholdSettingsPage() {
   const user = await requireUser();
   const supabase = await createClient();
+
+  // Read the real request host instead of window.location.origin -- this is
+  // known server-side (works on any deployment/preview URL with zero config)
+  // and keeps the invite link identical between server and client render,
+  // avoiding a hydration mismatch.
+  const headersList = await headers();
+  const host = headersList.get("x-forwarded-host") ?? headersList.get("host");
+  const protocol =
+    headersList.get("x-forwarded-proto") ?? (host?.startsWith("localhost") ? "http" : "https");
+  const origin = host ? `${protocol}://${host}` : "";
 
   const [household, { data: ownProfile }] = await Promise.all([
     getHousehold(user.id),
     supabase.from("profiles").select("display_name").eq("id", user.id).single(),
   ]);
 
-  const [membershipsResult, inviteResult] = await Promise.all([
+  const [membershipsResult, inviteResult, { data: categories }] = await Promise.all([
     household
       ? supabase.from("household_members").select("user_id").eq("household_id", household.id)
       : Promise.resolve({ data: null as { user_id: string }[] | null }),
@@ -27,6 +39,11 @@ export default async function HouseholdSettingsPage() {
           .limit(1)
           .maybeSingle()
       : Promise.resolve({ data: null as { id: string; token: string } | null }),
+    supabase
+      .from("categories")
+      .select("id, name, icon")
+      .or(household ? `household_id.eq.${household.id}` : "household_id.is.null")
+      .order("name"),
   ]);
 
   let members: { id: string; display_name: string | null }[] = [];
@@ -50,7 +67,9 @@ export default async function HouseholdSettingsPage() {
         members={members}
         pendingInvite={pendingInvite}
         currentUserId={user.id}
+        origin={origin}
       />
+      <CategoryManager categories={categories ?? []} householdId={household?.id ?? null} />
     </div>
   );
 }

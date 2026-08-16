@@ -33,7 +33,7 @@ export default async function HouseholdDashboardPage({
             until they accept.
           </p>
           <Button nativeButton={false} render={<Link href="/settings/household" />}>
-            Invite partner
+            Invite member
           </Button>
         </CardContent>
       </Card>

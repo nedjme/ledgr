@@ -6,13 +6,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
+  Sheet,
+  SheetContent,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 import { createClient } from "@/lib/supabase/client";
 
 export function AddAccountDialog() {
@@ -51,13 +51,13 @@ export function AddAccountDialog() {
   }
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger render={<Button />}>Add account</DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Add account</DialogTitle>
-        </DialogHeader>
-        <form className="space-y-4" onSubmit={onSubmit}>
+    <Sheet open={open} onOpenChange={setOpen}>
+      <SheetTrigger render={<Button />}>Add account</SheetTrigger>
+      <SheetContent>
+        <SheetHeader>
+          <SheetTitle>Add account</SheetTitle>
+        </SheetHeader>
+        <form className="flex flex-1 flex-col gap-4" onSubmit={onSubmit}>
           <div className="space-y-1.5">
             <Label htmlFor="name">Name</Label>
             <Input id="name" name="name" placeholder="Checking - CIH" required />
@@ -82,13 +82,13 @@ export function AddAccountDialog() {
             The balance this account had before you started tracking it here.
           </p>
           {error && <p className="text-sm text-destructive">{error}</p>}
-          <DialogFooter>
+          <SheetFooter>
             <Button type="submit" disabled={saving}>
               {saving ? "Saving..." : "Save"}
             </Button>
-          </DialogFooter>
+          </SheetFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </SheetContent>
+    </Sheet>
   );
 }
