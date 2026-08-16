@@ -9,17 +9,15 @@ export default async function AppLayout({
   children: React.ReactNode;
 }) {
   const user = await requireUser();
-  const household = await getHousehold(user.id);
-
   const supabase = await createClient();
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("display_name")
-    .eq("id", user.id)
-    .single();
+
+  const [household, { data: profile }, cookieStore] = await Promise.all([
+    getHousehold(user.id),
+    supabase.from("profiles").select("display_name").eq("id", user.id).single(),
+    cookies(),
+  ]);
 
   const displayName = profile?.display_name || user.email || "You";
-  const cookieStore = await cookies();
   const initialCollapsed = cookieStore.get("sidebar-collapsed")?.value === "1";
 
   return (

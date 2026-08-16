@@ -28,47 +28,47 @@ export default async function TransactionsPage({
 
   const supabase = await createClient();
 
-  const [{ data: categories }, { data: accounts }] = await Promise.all([
-    supabase
-      .from("categories")
-      .select("id, name")
-      .or(household ? `household_id.eq.${household.id}` : "household_id.is.null")
-      .order("name"),
-    supabase.from("accounts").select("id, name, currency").eq("user_id", user.id),
-  ]);
-  const categoryById = new Map((categories ?? []).map((c) => [c.id, c.name]));
-
-  let query = supabase
+  // Query construction is synchronous (no network call happens until it's
+  // awaited below), so it can join the same Promise.all as everything else
+  // that's already knowable at this point -- none of these four need each
+  // other's results.
+  let transactionsQuery = supabase
     .from("transactions")
     .select(
       "id, account_id, occurred_at, description, amount, currency, category_id, user_id",
       { count: "exact" },
     );
-
-  query =
+  transactionsQuery =
     scope === "household"
-      ? query.eq("household_id", household!.id)
-      : query.eq("user_id", user.id);
-
-  if (q) query = query.ilike("description", `%${q}%`);
-  if (category === "uncategorized") query = query.is("category_id", null);
-  else if (category) query = query.eq("category_id", category);
+      ? transactionsQuery.eq("household_id", household!.id)
+      : transactionsQuery.eq("user_id", user.id);
+  if (q) transactionsQuery = transactionsQuery.ilike("description", `%${q}%`);
+  if (category === "uncategorized") transactionsQuery = transactionsQuery.is("category_id", null);
+  else if (category) transactionsQuery = transactionsQuery.eq("category_id", category);
 
   const from = (page - 1) * PAGE_SIZE;
-  const { data: transactions, count } = await query
-    .order("occurred_at", { ascending: false })
-    .range(from, from + PAGE_SIZE - 1);
 
+  const [{ data: categories }, { data: accounts }, { data: transactions, count }, membersResult] =
+    await Promise.all([
+      supabase
+        .from("categories")
+        .select("id, name")
+        .or(household ? `household_id.eq.${household.id}` : "household_id.is.null")
+        .order("name"),
+      supabase.from("accounts").select("id, name, currency").eq("user_id", user.id),
+      transactionsQuery.order("occurred_at", { ascending: false }).range(from, from + PAGE_SIZE - 1),
+      scope === "household"
+        ? supabase.from("household_members").select("user_id").eq("household_id", household!.id)
+        : Promise.resolve({ data: null as { user_id: string }[] | null }),
+    ]);
+
+  const categoryById = new Map((categories ?? []).map((c) => [c.id, c.name]));
   const rows = transactions ?? [];
   const totalPages = Math.max(1, Math.ceil((count ?? 0) / PAGE_SIZE));
 
   let nameById = new Map<string, string>();
   if (scope === "household") {
-    const { data: members } = await supabase
-      .from("household_members")
-      .select("user_id")
-      .eq("household_id", household!.id);
-    const memberIds = (members ?? []).map((m) => m.user_id);
+    const memberIds = (membersResult.data ?? []).map((m) => m.user_id);
     if (memberIds.length) {
       const { data: profiles } = await supabase
         .from("profiles")

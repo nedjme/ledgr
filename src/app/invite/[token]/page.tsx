@@ -12,15 +12,19 @@ export default async function InvitePage({
   const { token } = await params;
   const supabase = await createClient();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  const { data: invite } = await supabase
-    .from("invites")
-    .select("household_id, expires_at, accepted_by")
-    .eq("token", token)
-    .maybeSingle();
+  const [
+    {
+      data: { user },
+    },
+    { data: invite },
+  ] = await Promise.all([
+    supabase.auth.getUser(),
+    supabase
+      .from("invites")
+      .select("household_id, expires_at, accepted_by")
+      .eq("token", token)
+      .maybeSingle(),
+  ]);
 
   const expired = invite?.expires_at ? new Date(invite.expires_at) < new Date() : false;
   const invalid = !invite || invite.accepted_by || expired;
