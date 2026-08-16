@@ -4,9 +4,11 @@ import { createClient } from "@/lib/supabase/server";
 import { periodRange, parsePeriod, parseAnchor, periodLabel } from "@/lib/period";
 import { formatCurrency } from "@/lib/format";
 import { groupByCurrency } from "@/lib/group-by-currency";
+import { accountBalances, sumByCurrency } from "@/lib/balance";
 import { PeriodToggle } from "@/components/period-toggle";
 import { StatCard } from "@/components/stat-card";
 import { HeroSummaryCard } from "@/components/hero-summary-card";
+import { BalanceCard } from "@/components/balance-summary";
 import { TransactionList } from "@/components/transaction-list";
 import { BreakdownChart } from "@/components/charts/breakdown-chart";
 import { toBreakdown } from "@/lib/breakdown";
@@ -64,17 +66,64 @@ export default async function HouseholdDashboardPage({
     ]);
 
   const memberIds = (members ?? []).map((m) => m.user_id);
-  const { data: profiles } = memberIds.length
-    ? await supabase.from("profiles").select("id, display_name").in("id", memberIds)
-    : { data: [] };
+
+  const [{ data: profiles }, { data: memberAccounts }, { data: allTransactions }] =
+    memberIds.length
+      ? await Promise.all([
+          supabase.from("profiles").select("id, display_name").in("id", memberIds),
+          supabase
+            .from("accounts")
+            .select("id, user_id, currency, starting_balance")
+            .in("user_id", memberIds),
+          // Unscoped by period -- current balance is a snapshot as of now.
+          // Only household-shared transactions are visible here (same
+          // boundary as everywhere else in this view), so this reflects
+          // balance built from shared history, not necessarily every
+          // transaction that ever touched the account.
+          supabase
+            .from("transactions")
+            .select("account_id, user_id, amount, currency")
+            .eq("household_id", household.id),
+        ])
+      : [{ data: [] }, { data: [] }, { data: [] }];
 
   const nameById = new Map((profiles ?? []).map((p) => [p.id, p.display_name || "Partner"]));
   const categoryById = new Map((categories ?? []).map((c) => [c.id, c.name]));
   const rows = transactions ?? [];
   const byCurrency = groupByCurrency(rows);
 
+  const balances = accountBalances(memberAccounts ?? [], allTransactions ?? []);
+  const balanceTotals = [...sumByCurrency(balances)].map(([currency, amount]) => ({
+    currency,
+    amount,
+  }));
+
+  const balanceByPersonAndCurrency = new Map<string, Map<string, number>>();
+  for (const b of balances) {
+    const byPerson = balanceByPersonAndCurrency.get(b.currency) ?? new Map<string, number>();
+    byPerson.set(b.user_id, (byPerson.get(b.user_id) ?? 0) + b.balance);
+    balanceByPersonAndCurrency.set(b.currency, byPerson);
+  }
+  const balanceByPersonGroups = [...balanceByPersonAndCurrency.entries()].map(
+    ([currency, byPerson]) => ({
+      currency,
+      people: [...byPerson.entries()].map(([userId, amount]) => ({
+        id: userId,
+        name: nameById.get(userId) ?? "Unknown",
+        amount,
+        isYou: userId === user.id,
+      })),
+    }),
+  );
+
   return (
     <div className="space-y-6">
+      <BalanceCard
+        title="Household balance"
+        totals={balanceTotals}
+        byPerson={balanceByPersonGroups}
+      />
+
       <div className="flex justify-end">
         <PeriodToggle period={period} anchor={anchor} />
       </div>

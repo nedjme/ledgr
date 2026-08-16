@@ -5,6 +5,8 @@ import { periodRange, parsePeriod, parseAnchor, periodLabel } from "@/lib/period
 import { formatCurrency } from "@/lib/format";
 import { dailySpendTrend } from "@/lib/trend";
 import { groupByCurrency } from "@/lib/group-by-currency";
+import { accountBalances, sumByCurrency } from "@/lib/balance";
+import { BalanceCard } from "@/components/balance-summary";
 import { PeriodToggle } from "@/components/period-toggle";
 import { StatCard } from "@/components/stat-card";
 import { HeroSummaryCard } from "@/components/hero-summary-card";
@@ -29,9 +31,12 @@ export default async function DashboardPage({
 
   const supabase = await createClient();
 
-  const [{ data: accounts }, { data: categories }, { data: transactions }] =
+  const [{ data: accounts }, { data: categories }, { data: transactions }, { data: allTransactions }] =
     await Promise.all([
-      supabase.from("accounts").select("id, name, currency").eq("user_id", user.id),
+      supabase
+        .from("accounts")
+        .select("id, user_id, name, currency, starting_balance")
+        .eq("user_id", user.id),
       supabase
         .from("categories")
         .select("id, name")
@@ -43,14 +48,25 @@ export default async function DashboardPage({
         .gte("occurred_at", start)
         .lte("occurred_at", end)
         .order("occurred_at", { ascending: false }),
+      // Unscoped by period -- current balance is a snapshot as of now, not
+      // "as of this week/month".
+      supabase.from("transactions").select("account_id, amount").eq("user_id", user.id),
     ]);
 
   const categoryById = new Map((categories ?? []).map((c) => [c.id, c.name]));
   const rows = transactions ?? [];
   const byCurrency = groupByCurrency(rows);
 
+  const balances = accountBalances(accounts ?? [], allTransactions ?? []);
+  const balanceTotals = [...sumByCurrency(balances)].map(([currency, amount]) => ({
+    currency,
+    amount,
+  }));
+
   return (
     <div className="space-y-6">
+      <BalanceCard totals={balanceTotals} />
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <PeriodToggle period={period} anchor={anchor} />
         <AddTransactionDialog
