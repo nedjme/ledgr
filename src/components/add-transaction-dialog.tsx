@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,7 +13,6 @@ import {
   SheetFooter,
   SheetHeader,
   SheetTitle,
-  SheetTrigger,
 } from "@/components/ui/sheet";
 import {
   Select,
@@ -94,106 +94,119 @@ export function AddTransactionDialog({
   }
 
   return (
-    <Sheet open={open} onOpenChange={setOpen}>
-      <SheetTrigger render={<Button />}>Add transaction</SheetTrigger>
-      <SheetContent>
-        <SheetHeader>
-          <SheetTitle>Add transaction</SheetTitle>
-        </SheetHeader>
-        <form className="flex flex-1 flex-col gap-4" onSubmit={onSubmit}>
-          <div className="grid grid-cols-2 gap-3">
+    <>
+      <Button className="hidden md:inline-flex" onClick={() => setOpen(true)}>
+        Add transaction
+      </Button>
+      <Button
+        size="icon-lg"
+        title="Add transaction"
+        onClick={() => setOpen(true)}
+        className="fixed right-5 bottom-24 z-40 size-14 rounded-full shadow-lg md:hidden"
+      >
+        <Plus className="size-6" />
+      </Button>
+
+      <Sheet open={open} onOpenChange={setOpen}>
+        <SheetContent>
+          <SheetHeader>
+            <SheetTitle>Add transaction</SheetTitle>
+          </SheetHeader>
+          <form className="flex flex-1 flex-col gap-4" onSubmit={onSubmit}>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="type">Type</Label>
+                <Select
+                  name="type"
+                  defaultValue="expense"
+                  items={{ expense: "Expense", income: "Income" }}
+                >
+                  <SelectTrigger id="type" className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="expense">Expense</SelectItem>
+                    <SelectItem value="income">Income</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="amount">Amount</Label>
+                <Input
+                  id="amount"
+                  name="amount"
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  required
+                />
+              </div>
+            </div>
+
             <div className="space-y-1.5">
-              <Label htmlFor="type">Type</Label>
+              <Label htmlFor="account_id">Account</Label>
               <Select
-                name="type"
-                defaultValue="expense"
-                items={{ expense: "Expense", income: "Income" }}
+                name="account_id"
+                defaultValue={accounts[0]?.id}
+                items={accountItems}
+                required
               >
-                <SelectTrigger id="type" className="w-full">
+                <SelectTrigger id="account_id" className="w-full">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="expense">Expense</SelectItem>
-                  <SelectItem value="income">Income</SelectItem>
+                  {accounts.map((account) => (
+                    <SelectItem key={account.id} value={account.id}>
+                      {account.name}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
+
             <div className="space-y-1.5">
-              <Label htmlFor="amount">Amount</Label>
-              <Input
-                id="amount"
-                name="amount"
-                type="number"
-                step="0.01"
-                min="0"
-                required
-              />
+              <Label htmlFor="category_id">Category</Label>
+              <Select name="category_id" items={categoryItems}>
+                <SelectTrigger id="category_id" className="w-full">
+                  <SelectValue placeholder="Uncategorized" />
+                </SelectTrigger>
+                <SelectContent>
+                  {categories.map((category) => (
+                    <SelectItem key={category.id} value={category.id}>
+                      {category.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-          </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="account_id">Account</Label>
-            <Select
-              name="account_id"
-              defaultValue={accounts[0]?.id}
-              items={accountItems}
-              required
-            >
-              <SelectTrigger id="account_id" className="w-full">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {accounts.map((account) => (
-                  <SelectItem key={account.id} value={account.id}>
-                    {account.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="space-y-1.5">
-            <Label htmlFor="category_id">Category</Label>
-            <Select name="category_id" items={categoryItems}>
-              <SelectTrigger id="category_id" className="w-full">
-                <SelectValue placeholder="Uncategorized" />
-              </SelectTrigger>
-              <SelectContent>
-                {categories.map((category) => (
-                  <SelectItem key={category.id} value={category.id}>
-                    {category.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="occurred_at">Date</Label>
-              <Input
-                id="occurred_at"
-                name="occurred_at"
-                type="date"
-                defaultValue={new Date().toISOString().slice(0, 10)}
-                required
-              />
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="occurred_at">Date</Label>
+                <Input
+                  id="occurred_at"
+                  name="occurred_at"
+                  type="date"
+                  defaultValue={new Date().toISOString().slice(0, 10)}
+                  required
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="description">Description</Label>
+                <Input id="description" name="description" placeholder="Carrefour" />
+              </div>
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="description">Description</Label>
-              <Input id="description" name="description" placeholder="Carrefour" />
-            </div>
-          </div>
 
-          {error && <p className="text-sm text-destructive">{error}</p>}
+            {error && <p className="text-sm text-destructive">{error}</p>}
 
-          <SheetFooter>
-            <Button type="submit" disabled={saving}>
-              {saving ? "Saving..." : "Save"}
-            </Button>
-          </SheetFooter>
-        </form>
-      </SheetContent>
-    </Sheet>
+            <SheetFooter>
+              <Button type="submit" disabled={saving}>
+                {saving ? "Saving..." : "Save"}
+              </Button>
+            </SheetFooter>
+          </form>
+        </SheetContent>
+      </Sheet>
+    </>
   );
 }

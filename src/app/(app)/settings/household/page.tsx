@@ -4,6 +4,8 @@ import { createClient } from "@/lib/supabase/server";
 import { HouseholdSettings } from "@/components/household-settings";
 import { ProfileSettings } from "@/components/profile-settings";
 import { CategoryManager } from "@/components/category-manager";
+import { DeleteAccountDialog } from "@/components/delete-account-dialog";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 export default async function HouseholdSettingsPage() {
   const user = await requireUser();
@@ -70,6 +72,15 @@ export default async function HouseholdSettingsPage() {
         origin={origin}
       />
       <CategoryManager categories={categories ?? []} householdId={household?.id ?? null} />
+
+      <Card className="border-destructive/30">
+        <CardHeader>
+          <CardTitle className="text-destructive">Danger zone</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <DeleteAccountDialog />
+        </CardContent>
+      </Card>
     </div>
   );
 }
