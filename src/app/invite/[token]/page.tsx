@@ -46,8 +46,8 @@ export default async function InvitePage({
           <CardTitle>Join {householdName || "the household"}</CardTitle>
           {!invalid && (
             <CardDescription>
-              You&apos;ll see a combined dashboard. Nothing else changes — this
-              is a tracker, not a splitter.
+              You&apos;ll see a combined dashboard. Nothing else about your
+              own accounts or transactions changes.
             </CardDescription>
           )}
         </CardHeader>

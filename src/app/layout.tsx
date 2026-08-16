@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Ledgr",
-  description: "Track spending together, without splitting the bill.",
+  description: "Track spending together.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
