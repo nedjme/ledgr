@@ -1,8 +1,14 @@
 import "server-only";
+import { cache } from "react";
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 
-export async function requireUser() {
+// Every page calls both of these, and its layout calls them again for the
+// nav shell -- without caching that's 2x the auth round-trips and 2x the
+// household lookups on every single navigation. React's cache() dedupes
+// repeated calls (same args) within one request, so the layout and the
+// page share a single network round-trip instead of doubling it.
+export const requireUser = cache(async () => {
   const supabase = await createClient();
   const {
     data: { user },
@@ -10,9 +16,9 @@ export async function requireUser() {
 
   if (!user) redirect("/login");
   return user;
-}
+});
 
-export async function getHousehold(userId: string) {
+export const getHousehold = cache(async (userId: string) => {
   const supabase = await createClient();
   const { data: membership } = await supabase
     .from("household_members")
@@ -29,4 +35,4 @@ export async function getHousehold(userId: string) {
     .single();
 
   return household ?? null;
-}
+});
