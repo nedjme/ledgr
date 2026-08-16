@@ -45,7 +45,7 @@ export function AppTopbar({
   const title = TITLES.find((t) => t.test(pathname))?.title ?? "Ledgr";
 
   return (
-    <header className="sticky top-0 z-20 flex items-center justify-between gap-4 border-b border-border/80 bg-background/80 px-4 py-4 backdrop-blur md:px-8">
+    <header className="sticky top-0 z-20 flex items-center justify-between gap-4 border-b border-border/80 bg-card/90 px-4 py-4 shadow-sm backdrop-blur md:px-8">
       <div className="flex items-center gap-2">
         <Button
           variant="ghost"
