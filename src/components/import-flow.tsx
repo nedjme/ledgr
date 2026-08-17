@@ -26,7 +26,7 @@ import { FileDropzone } from "@/components/file-dropzone";
 import { createClient } from "@/lib/supabase/client";
 import { parseTable, applyMapping, type ColumnMapping } from "@/lib/csv";
 import { suggestCategory } from "@/lib/categorize";
-import { BANK_PRESETS, GENERIC_PRESET_ID } from "@/lib/bank-presets";
+import { BANK_PRESETS, GENERIC_PRESET_ID, detectBankPreset } from "@/lib/bank-presets";
 
 type Account = { id: string; name: string };
 type Category = { id: string; name: string };
@@ -94,6 +94,7 @@ export function ImportFlow({
   function onFile(text: string, name: string) {
     setRaw(text);
     setFileName(name);
+    setPresetId(detectBankPreset(text));
   }
 
   async function onImport() {
@@ -195,11 +196,16 @@ export function ImportFlow({
             </Label>
             <Textarea
               rows={6}
+              className="max-h-40 overflow-y-auto field-sizing-fixed"
               placeholder={"date,description,amount\n2026-08-01,CARREFOUR RABAT,-345.50"}
               value={raw}
               onChange={(e) => {
                 setRaw(e.target.value);
                 setFileName(null);
+              }}
+              onPaste={(e) => {
+                const pasted = e.clipboardData.getData("text");
+                if (pasted) setPresetId(detectBankPreset(pasted));
               }}
             />
           </div>
