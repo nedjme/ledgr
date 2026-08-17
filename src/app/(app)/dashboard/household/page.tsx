@@ -23,9 +23,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { HeroSkeleton, StatCardsSkeleton, ChartCardSkeleton, ListSkeleton } from "@/components/skeletons";
 
-type CategoryRow = { id: string; name: string; icon: string | null; color: string | null; parent_id: string | null };
-type AccountRow = { id: string; name: string; currency: string };
-
 export default async function HouseholdDashboardPage({
   searchParams,
 }: {
@@ -62,107 +59,32 @@ export default async function HouseholdDashboardPage({
   const params = await searchParams;
   const resolved = resolvePeriod(params);
 
-  const supabase = await createClient();
-
-  // Period-independent -- household roster, balances, and categories don't
-  // change based on the selected period, so they're fetched here (outside
-  // the Suspense boundary below) and the balance card + toolbar render with
-  // them immediately, without waiting on the period-scoped transactions.
-  const [{ data: categories }, { data: members }, { data: accounts }] = await Promise.all([
-    supabase.from("categories").select("id, name, icon, color, parent_id").eq("household_id", household.id),
-    supabase.from("household_members").select("user_id").eq("household_id", household.id),
-    supabase.from("accounts").select("id, name, currency").eq("user_id", user.id),
-  ]);
-
-  const memberIds = (members ?? []).map((m) => m.user_id);
-  const otherMemberIds = memberIds.filter((id) => id !== user.id);
-
-  const [{ data: profiles }, { data: memberAccounts }, { data: ownTransactions }, { data: sharedTransactions }] =
-    memberIds.length
-      ? await Promise.all([
-          supabase.from("profiles").select("id, display_name").in("id", memberIds),
-          supabase
-            .from("accounts")
-            .select("id, user_id, currency, starting_balance")
-            .in("user_id", memberIds),
-          // Unscoped by period -- current balance is a snapshot as of now.
-          // The current user's own balance uses every transaction they've
-          // ever logged (same query the personal dashboard uses), not just
-          // the ones tagged household_id -- a transaction recorded before a
-          // household existed (e.g. an import done pre-signup) never gets
-          // retroactively tagged, so scoping this to household_id alone
-          // undercounts your own balance.
-          supabase
-            .from("transactions")
-            .select("account_id, user_id, amount, currency")
-            .eq("user_id", user.id),
-          // A partner's balance, in contrast, can only be built from what
-          // they've explicitly shared with the household -- RLS hides the
-          // rest of their transactions, so this may undercount if they have
-          // unshared history of their own.
-          otherMemberIds.length
-            ? supabase
-                .from("transactions")
-                .select("account_id, user_id, amount, currency")
-                .eq("household_id", household.id)
-                .in("user_id", otherMemberIds)
-            : Promise.resolve({ data: [] as { account_id: string; user_id: string; amount: number; currency: string }[] }),
-        ])
-      : [{ data: [] }, { data: [] }, { data: [] }, { data: [] }];
-
-  const nameById = new Map((profiles ?? []).map((p) => [p.id, p.display_name || "Partner"]));
-
-  const allTransactions = [...(ownTransactions ?? []), ...(sharedTransactions ?? [])];
-  const balances = accountBalances(memberAccounts ?? [], allTransactions);
-  const balanceTotals = [...sumByCurrency(balances)].map(([currency, amount]) => ({
-    currency,
-    amount,
-  }));
-
-  const balanceByPersonAndCurrency = new Map<string, Map<string, number>>();
-  for (const b of balances) {
-    const byPerson = balanceByPersonAndCurrency.get(b.currency) ?? new Map<string, number>();
-    byPerson.set(b.user_id, (byPerson.get(b.user_id) ?? 0) + b.balance);
-    balanceByPersonAndCurrency.set(b.currency, byPerson);
-  }
-  const balanceByPersonGroups = [...balanceByPersonAndCurrency.entries()].map(
-    ([currency, byPerson]) => ({
-      currency,
-      people: [...byPerson.entries()].map(([userId, amount]) => ({
-        id: userId,
-        name: nameById.get(userId) ?? "Unknown",
-        amount,
-        isYou: userId === user.id,
-      })),
-    }),
-  );
-
   return (
-    <div className="space-y-6">
-      <BalanceCard
-        title="Household balance"
-        totals={balanceTotals}
-        byPerson={balanceByPersonGroups}
-      />
-
-      <div className="flex justify-end">
+    <div className="flex flex-col gap-6">
+      <div className="order-2 flex justify-end">
         <PeriodToggle allowYear allowCustom />
       </div>
 
-      {/* Keyed by the resolved query string so every distinct filter change
-          remounts this boundary and re-shows the skeleton, instead of
-          leaving the previous period's numbers frozen on screen for the
-          duration of the refetch -- see the equivalent comment in the
-          personal dashboard's page.tsx. */}
+      {/* Household roster/balances and the period-scoped numbers share this
+          one boundary (each carrying its own `order-*` once resolved,
+          giving Balance `order-1` to sit above the toolbar) -- this
+          Next.js version resolves *all* sibling Suspense boundaries on a
+          page together during a client transition, gated by whichever is
+          slowest, so splitting Balance into its own earlier boundary
+          (which would seem the more natural way to reorder it) just delays
+          this skeleton by Balance's own fetch time for no benefit. Keyed
+          by the resolved query string so every distinct filter change
+          remounts it and re-shows the skeleton -- otherwise React's
+          default behavior during a router-driven transition is to keep
+          the *previous* period's numbers on screen until the new ones are
+          ready, which reads as the click not having registered rather
+          than as a fast load. */}
       <Suspense key={resolved.queryParams} fallback={<HouseholdDataSkeleton />}>
         <HouseholdDashboardData
           userId={user.id}
           householdId={household.id}
           householdName={household.name}
           resolved={resolved}
-          categories={categories ?? []}
-          accounts={accounts ?? []}
-          nameById={nameById}
         />
       </Suspense>
     </div>
@@ -171,7 +93,7 @@ export default async function HouseholdDashboardPage({
 
 function HouseholdDataSkeleton() {
   return (
-    <div className="space-y-6">
+    <div className="order-1 space-y-6">
       <HeroSkeleton />
       <StatCardsSkeleton />
       <ChartCardSkeleton />
@@ -189,17 +111,11 @@ async function HouseholdDashboardData({
   householdId,
   householdName,
   resolved,
-  categories,
-  accounts,
-  nameById,
 }: {
   userId: string;
   householdId: string;
   householdName: string | null;
   resolved: ResolvedPeriod;
-  categories: CategoryRow[];
-  accounts: AccountRow[];
-  nameById: Map<string, string>;
 }) {
   // A custom range with no end picked yet still needs *something* to query
   // -- falls back to the current month rather than fetching nothing.
@@ -207,7 +123,16 @@ async function HouseholdDashboardData({
 
   const supabase = await createClient();
 
-  const [{ data: transactions }, { data: compareTransactions }] = await Promise.all([
+  const [
+    { data: categories },
+    { data: accounts },
+    { data: members },
+    { data: transactions },
+    { data: compareTransactions },
+  ] = await Promise.all([
+    supabase.from("categories").select("id, name, icon, color, parent_id").eq("household_id", householdId),
+    supabase.from("accounts").select("id, name, currency").eq("user_id", userId),
+    supabase.from("household_members").select("user_id").eq("household_id", householdId),
     supabase
       .from("transactions")
       .select("id, account_id, occurred_at, description, amount, currency, category_id, user_id")
@@ -229,7 +154,70 @@ async function HouseholdDashboardData({
         }),
   ]);
 
-  const categoryById = new Map(categories.map((c) => [c.id, c]));
+  const memberIds = (members ?? []).map((m) => m.user_id);
+  const otherMemberIds = memberIds.filter((id) => id !== userId);
+
+  const [{ data: profiles }, { data: memberAccounts }, { data: ownTransactions }, { data: sharedTransactions }] =
+    memberIds.length
+      ? await Promise.all([
+          supabase.from("profiles").select("id, display_name").in("id", memberIds),
+          supabase
+            .from("accounts")
+            .select("id, user_id, currency, starting_balance")
+            .in("user_id", memberIds),
+          // Unscoped by period -- current balance is a snapshot as of now.
+          // The current user's own balance uses every transaction they've
+          // ever logged (same query the personal dashboard uses), not just
+          // the ones tagged household_id -- a transaction recorded before a
+          // household existed (e.g. an import done pre-signup) never gets
+          // retroactively tagged, so scoping this to household_id alone
+          // undercounts your own balance.
+          supabase
+            .from("transactions")
+            .select("account_id, user_id, amount, currency")
+            .eq("user_id", userId),
+          // A partner's balance, in contrast, can only be built from what
+          // they've explicitly shared with the household -- RLS hides the
+          // rest of their transactions, so this may undercount if they have
+          // unshared history of their own.
+          otherMemberIds.length
+            ? supabase
+                .from("transactions")
+                .select("account_id, user_id, amount, currency")
+                .eq("household_id", householdId)
+                .in("user_id", otherMemberIds)
+            : Promise.resolve({ data: [] as { account_id: string; user_id: string; amount: number; currency: string }[] }),
+        ])
+      : [{ data: [] }, { data: [] }, { data: [] }, { data: [] }];
+
+  const nameById = new Map((profiles ?? []).map((p) => [p.id, p.display_name || "Partner"]));
+
+  const allMemberTransactions = [...(ownTransactions ?? []), ...(sharedTransactions ?? [])];
+  const balances = accountBalances(memberAccounts ?? [], allMemberTransactions);
+  const balanceTotals = [...sumByCurrency(balances)].map(([currency, amount]) => ({
+    currency,
+    amount,
+  }));
+
+  const balanceByPersonAndCurrency = new Map<string, Map<string, number>>();
+  for (const b of balances) {
+    const byPerson = balanceByPersonAndCurrency.get(b.currency) ?? new Map<string, number>();
+    byPerson.set(b.user_id, (byPerson.get(b.user_id) ?? 0) + b.balance);
+    balanceByPersonAndCurrency.set(b.currency, byPerson);
+  }
+  const balanceByPersonGroups = [...balanceByPersonAndCurrency.entries()].map(
+    ([currency, byPerson]) => ({
+      currency,
+      people: [...byPerson.entries()].map(([memberId, amount]) => ({
+        id: memberId,
+        name: nameById.get(memberId) ?? "Unknown",
+        amount,
+        isYou: memberId === userId,
+      })),
+    }),
+  );
+
+  const categoryById = new Map((categories ?? []).map((c) => [c.id, c]));
   const rows = transactions ?? [];
   const byCurrency = groupByCurrency(rows);
   const compareByCurrency = groupByCurrency(compareTransactions ?? []);
@@ -260,6 +248,11 @@ async function HouseholdDashboardData({
 
   return (
     <>
+      <div className="order-1">
+        <BalanceCard title="Household balance" totals={balanceTotals} byPerson={balanceByPersonGroups} />
+      </div>
+
+      <div className="order-3 space-y-6">
       {rows.length === 0 ? (
         <Card>
           <CardContent className="py-8 text-center text-sm text-muted-foreground">
@@ -488,11 +481,12 @@ async function HouseholdDashboardData({
                 category_name: t.category_id ? categoryById.get(t.category_id)?.name ?? null : null,
                 owner_name: nameById.get(t.user_id) ?? null,
               }))}
-              editable={{ currentUserId: userId, accounts, categories }}
+              editable={{ currentUserId: userId, accounts: accounts ?? [], categories: categories ?? [] }}
             />
           </CardContent>
         </Card>
       )}
+      </div>
     </>
   );
 }

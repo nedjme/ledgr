@@ -16,9 +16,6 @@ import type { BreakdownDatum } from "@/lib/breakdown";
 
 const PAGE_SIZE = 30;
 
-type CategoryRow = { id: string; name: string; icon: string | null; color: string | null; parent_id: string | null };
-type AccountRow = { id: string; name: string; currency: string };
-
 type SearchParams = {
   scope?: string;
   q?: string;
@@ -54,30 +51,25 @@ export default async function TransactionsPage({
   const isAllTime = !params.period;
   const resolved = resolvePeriod(params);
 
+  // Small, filter-independent lookup -- fetched directly (not behind its
+  // own Suspense) since it's typically fast, and this Next.js version
+  // resolves sibling Suspense boundaries in document order during a client
+  // transition: an earlier boundary's own fetch would delay the *data*
+  // boundary's fallback from appearing at all, even though the two are
+  // otherwise unrelated. It also can't share the data boundary below --
+  // that one remounts on every keystroke (see its key), which would blow
+  // away the filter bar's own search-input state if the two were merged.
   const supabase = await createClient();
-
-  // Period/filter-independent -- the category list itself doesn't change as
-  // you type a search or flip periods, so it's fetched here, outside the
-  // Suspense boundary below, letting the filter bar and period toggle render
-  // and stay interactive immediately instead of disappearing behind a
-  // skeleton alongside the query results while those refetch.
-  const [{ data: categories }, { data: accounts }] = await Promise.all([
-    supabase
-      .from("categories")
-      .select("id, name, icon, color, parent_id")
-      .or(household ? `household_id.eq.${household.id}` : "household_id.is.null")
-      .order("name"),
-    supabase.from("accounts").select("id, name, currency").eq("user_id", user.id),
-  ]);
+  const { data: categories } = await supabase
+    .from("categories")
+    .select("id, name, icon, color, parent_id")
+    .or(household ? `household_id.eq.${household.id}` : "household_id.is.null")
+    .order("name");
 
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <TransactionsFilterBar
-          categories={categories ?? []}
-          showScope={!!household}
-          q={q}
-        />
+        <TransactionsFilterBar categories={categories ?? []} showScope={!!household} q={q} />
         <PeriodToggle allowAll allowYear allowCustom />
       </div>
 
@@ -97,8 +89,6 @@ export default async function TransactionsPage({
           page={page}
           isAllTime={isAllTime}
           resolved={resolved}
-          categories={categories ?? []}
-          accounts={accounts ?? []}
           rawParams={params}
         />
       </Suspense>
@@ -124,8 +114,6 @@ async function TransactionsData({
   page,
   isAllTime,
   resolved,
-  categories,
-  accounts,
   rawParams,
 }: {
   userId: string;
@@ -136,8 +124,6 @@ async function TransactionsData({
   page: number;
   isAllTime: boolean;
   resolved: ResolvedPeriod;
-  categories: CategoryRow[];
-  accounts: AccountRow[];
   rawParams: SearchParams;
 }) {
   const range = isAllTime ? null : resolved.range;
@@ -148,11 +134,20 @@ async function TransactionsData({
 
   const supabase = await createClient();
 
+  const [{ data: categories }, { data: accounts }] = await Promise.all([
+    supabase
+      .from("categories")
+      .select("id, name, icon, color, parent_id")
+      .or(householdId ? `household_id.eq.${householdId}` : "household_id.is.null")
+      .order("name"),
+    supabase.from("accounts").select("id, name, currency").eq("user_id", userId),
+  ]);
+
   // Fetched ahead of the rest -- the transaction/report queries below need
   // to know a clicked category's subcategory ids (if any) to widen their
   // filter from "this exact category" to "this category or its children",
   // so a subcategory's spend still counts toward its parent's drill-down.
-  const childCategoryIds = categories.filter((c) => c.parent_id === category).map((c) => c.id);
+  const childCategoryIds = (categories ?? []).filter((c) => c.parent_id === category).map((c) => c.id);
   const categoryFilterIds = childCategoryIds.length > 0 ? [category, ...childCategoryIds] : null;
 
   // Query construction is synchronous (no network call happens until it's
@@ -228,7 +223,7 @@ async function TransactionsData({
       : Promise.resolve({ data: null as { amount: number; currency: string }[] | null }),
   ]);
 
-  const categoryById = new Map(categories.map((c) => [c.id, c]));
+  const categoryById = new Map((categories ?? []).map((c) => [c.id, c]));
   const rows = transactions ?? [];
   const totalPages = Math.max(1, Math.ceil((count ?? 0) / PAGE_SIZE));
 
@@ -351,7 +346,7 @@ async function TransactionsData({
               category_name: t.category_id ? categoryById.get(t.category_id)?.name ?? null : null,
               owner_name: scope === "household" ? nameById.get(t.user_id) ?? null : null,
             }))}
-            editable={{ currentUserId: userId, accounts, categories }}
+            editable={{ currentUserId: userId, accounts: accounts ?? [], categories: categories ?? [] }}
           />
         </CardContent>
       </Card>

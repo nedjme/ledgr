@@ -45,11 +45,16 @@ export default async function DashboardPage({
 
   const supabase = await createClient();
 
-  // Period-independent -- fetched here, outside the Suspense boundary below,
-  // so the toolbar and "Add transaction" stay live and in place the instant
-  // the URL changes, instead of vanishing behind a skeleton alongside the
-  // period-scoped numbers while those refetch.
-  const [{ data: accounts }, { data: categories }, { data: allTransactions }] = await Promise.all([
+  // Small, period-independent lookups -- fetched directly (not behind their
+  // own Suspense) since they're typically fast, and this Next.js version
+  // resolves sibling Suspense boundaries in document order during a client
+  // transition: an earlier boundary's own fetch delays a *later* boundary's
+  // fallback from appearing at all, even though the two are otherwise
+  // unrelated. Splitting every section into its own boundary sounds right
+  // but backfires here -- keeping this one fast lookup un-suspended (so the
+  // toolbar and Add-transaction render immediately) and folding everything
+  // else into a single boundary below avoids that trap.
+  const [{ data: accounts }, { data: categories }] = await Promise.all([
     supabase
       .from("accounts")
       .select("id, user_id, name, currency, starting_balance")
@@ -58,22 +63,11 @@ export default async function DashboardPage({
       .from("categories")
       .select("id, name, icon, color, parent_id")
       .or(household ? `household_id.eq.${household.id}` : "household_id.is.null"),
-    // Unscoped by period -- current balance is a snapshot as of now, not
-    // "as of this week/month".
-    supabase.from("transactions").select("account_id, amount").eq("user_id", user.id),
   ]);
 
-  const balances = accountBalances(accounts ?? [], allTransactions ?? []);
-  const balanceTotals = [...sumByCurrency(balances)].map(([currency, amount]) => ({
-    currency,
-    amount,
-  }));
-
   return (
-    <div className="space-y-6">
-      <BalanceCard totals={balanceTotals} />
-
-      <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="flex flex-col gap-6">
+      <div className="order-2 flex flex-wrap items-center justify-between gap-3">
         <PeriodToggle allowYear allowCustom />
         <AddTransactionDialog
           accounts={accounts ?? []}
@@ -82,18 +76,26 @@ export default async function DashboardPage({
         />
       </div>
 
-      {/* Keyed by the resolved query string so every distinct filter change
-          (not just the URL changing at all) remounts this boundary and
-          re-shows the skeleton -- otherwise React's default behavior during
-          a router-driven transition is to keep the *previous* period's
-          numbers on screen until the new ones are ready, which reads as the
-          click not having registered rather than as a fast load. */}
+      {/* Balance and the period-scoped numbers share this one boundary
+          (each carrying its own `order-*` once resolved, giving Balance
+          `order-1` to sit above the toolbar) -- this Next.js version
+          resolves *all* sibling Suspense boundaries on a page together
+          during a client transition, gated by whichever is slowest, so
+          splitting Balance into its own earlier boundary (which would seem
+          the more natural way to reorder it) just delays this skeleton by
+          Balance's own fetch time for no benefit. Keyed by the resolved
+          query string so every distinct filter change remounts it and
+          re-shows the skeleton -- otherwise React's default behavior
+          during a router-driven transition is to keep the *previous*
+          period's numbers on screen until the new ones are ready, which
+          reads as the click not having registered rather than as a fast
+          load. */}
       <Suspense key={resolved.queryParams} fallback={<DashboardDataSkeleton />}>
         <DashboardData
           userId={user.id}
           resolved={resolved}
-          categories={categories ?? []}
           accounts={accounts ?? []}
+          categories={categories ?? []}
         />
       </Suspense>
     </div>
@@ -102,7 +104,7 @@ export default async function DashboardPage({
 
 function DashboardDataSkeleton() {
   return (
-    <div className="space-y-6">
+    <div className="order-1 space-y-6">
       <HeroSkeleton />
       <StatCardsSkeleton />
       <ChartCardSkeleton />
@@ -115,13 +117,13 @@ function DashboardDataSkeleton() {
 async function DashboardData({
   userId,
   resolved,
-  categories,
   accounts,
+  categories,
 }: {
   userId: string;
   resolved: ResolvedPeriod;
-  categories: CategoryRow[];
   accounts: AccountRow[];
+  categories: CategoryRow[];
 }) {
   // A custom range with no end picked yet still needs *something* to query
   // -- falls back to the current month rather than fetching nothing.
@@ -129,7 +131,10 @@ async function DashboardData({
 
   const supabase = await createClient();
 
-  const [{ data: transactions }, { data: compareTransactions }] = await Promise.all([
+  const [{ data: allTransactions }, { data: transactions }, { data: compareTransactions }] = await Promise.all([
+    // Unscoped by period -- current balance is a snapshot as of now, not
+    // "as of this week/month".
+    supabase.from("transactions").select("account_id, amount").eq("user_id", userId),
     supabase
       .from("transactions")
       .select("id, account_id, occurred_at, description, amount, currency, category_id")
@@ -150,6 +155,12 @@ async function DashboardData({
             | null,
         }),
   ]);
+
+  const balances = accountBalances(accounts, allTransactions ?? []);
+  const balanceTotals = [...sumByCurrency(balances)].map(([currency, amount]) => ({
+    currency,
+    amount,
+  }));
 
   const categoryById = new Map(categories.map((c) => [c.id, c]));
   const rows = transactions ?? [];
@@ -182,6 +193,11 @@ async function DashboardData({
 
   return (
     <>
+      <div className="order-1">
+        <BalanceCard totals={balanceTotals} />
+      </div>
+
+      <div className="order-3 space-y-6">
       {rows.length === 0 ? (
         <Card>
           <CardContent className="py-8 text-center text-sm text-muted-foreground">
@@ -400,6 +416,7 @@ async function DashboardData({
           </CardContent>
         </Card>
       )}
+      </div>
     </>
   );
 }
