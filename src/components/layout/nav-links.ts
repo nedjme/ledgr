@@ -3,6 +3,7 @@ import {
   Users,
   Wallet,
   ArrowRightLeft,
+  PiggyBank,
   Settings,
   type LucideIcon,
 } from "lucide-react";
@@ -17,6 +18,7 @@ export const NAV_LINKS: NavLink[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/dashboard/household", label: "Household", icon: Users },
   { href: "/transactions", label: "Transactions", icon: ArrowRightLeft },
+  { href: "/budgets", label: "Budgets", icon: PiggyBank },
   { href: "/accounts", label: "Accounts", icon: Wallet },
   { href: "/settings/household", label: "Settings", icon: Settings },
 ];

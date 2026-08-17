@@ -179,6 +179,93 @@ export type Database = {
         };
         Relationships: [];
       };
+      budgets: {
+        Row: {
+          id: string;
+          user_id: string;
+          category_id: string | null;
+          amount: number;
+          currency: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          category_id?: string | null;
+          amount: number;
+          currency?: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          category_id?: string | null;
+          amount?: number;
+          currency?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      goals: {
+        Row: {
+          id: string;
+          user_id: string;
+          name: string;
+          target_amount: number;
+          target_date: string | null;
+          currency: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          name: string;
+          target_amount: number;
+          target_date?: string | null;
+          currency?: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          name?: string;
+          target_amount?: number;
+          target_date?: string | null;
+          currency?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      goal_contributions: {
+        Row: {
+          id: string;
+          goal_id: string;
+          user_id: string;
+          amount: number;
+          currency: string;
+          occurred_at: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          goal_id: string;
+          user_id: string;
+          amount: number;
+          currency?: string;
+          occurred_at?: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          goal_id?: string;
+          user_id?: string;
+          amount?: number;
+          currency?: string;
+          occurred_at?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
@@ -189,6 +276,10 @@ export type Database = {
       accept_invite: {
         Args: { invite_token: string };
         Returns: string;
+      };
+      account_balances: {
+        Args: { target_account_ids: string[] };
+        Returns: { account_id: string; user_id: string; currency: string; balance: number }[];
       };
     };
     Enums: Record<string, never>;
@@ -204,3 +295,6 @@ export type Invite = Database["public"]["Tables"]["invites"]["Row"];
 export type Account = Database["public"]["Tables"]["accounts"]["Row"];
 export type Category = Database["public"]["Tables"]["categories"]["Row"];
 export type Transaction = Database["public"]["Tables"]["transactions"]["Row"];
+export type Budget = Database["public"]["Tables"]["budgets"]["Row"];
+export type Goal = Database["public"]["Tables"]["goals"]["Row"];
+export type GoalContribution = Database["public"]["Tables"]["goal_contributions"]["Row"];

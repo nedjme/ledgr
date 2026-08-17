@@ -237,13 +237,53 @@ Deno.serve(async (req) => {
       return json({ imported: 0, skipped: 0 });
     }
 
-    const { data: inserted, error } = await supabase
+    // A row only counts as an already-imported duplicate if it matches one
+    // *already stored* -- two rows in this same batch sharing a
+    // date/amount/description are two real transactions from the
+    // statement (two coffees, two rides, a recurring charge twice in a
+    // day), not a re-import, so they both go in. Re-uploading the same
+    // statement a second time still gets fully skipped: every key in it
+    // will have already-stored matches to count against.
+    const dateKey = (row: { occurred_at: string }) => row.occurred_at;
+    const minDate = rows.reduce((min, r) => (dateKey(r) < min ? dateKey(r) : min), dateKey(rows[0]));
+    const maxDate = rows.reduce((max, r) => (dateKey(r) > max ? dateKey(r) : max), dateKey(rows[0]));
+
+    const { data: existing } = await supabase
       .from("transactions")
-      .upsert(rows, {
-        onConflict: "account_id,occurred_at,amount,description",
-        ignoreDuplicates: true,
-      })
-      .select("id");
+      .select("occurred_at, amount, description")
+      .eq("account_id", accountId)
+      .gte("occurred_at", minDate)
+      .lte("occurred_at", maxDate);
+
+    const dedupeKey = (row: { occurred_at: string; amount: number; description: string | null }) =>
+      `${row.occurred_at}|${row.amount}|${row.description ?? ""}`;
+
+    const existingCountByKey = new Map<string, number>();
+    for (const e of existing ?? []) {
+      const key = dedupeKey(e);
+      existingCountByKey.set(key, (existingCountByKey.get(key) ?? 0) + 1);
+    }
+
+    const seenByKey = new Map<string, number>();
+    const toInsert = [];
+    let skipped = 0;
+    for (const row of rows) {
+      const key = dedupeKey(row);
+      const already = existingCountByKey.get(key) ?? 0;
+      const seen = seenByKey.get(key) ?? 0;
+      seenByKey.set(key, seen + 1);
+      if (seen < already) {
+        skipped++;
+        continue;
+      }
+      toInsert.push(row);
+    }
+
+    if (toInsert.length === 0) {
+      return json({ imported: 0, skipped });
+    }
+
+    const { data: inserted, error } = await supabase.from("transactions").insert(toInsert).select("id");
 
     if (error) {
       return json({ error: error.message }, { status: 400 });
@@ -251,7 +291,7 @@ Deno.serve(async (req) => {
 
     return json({
       imported: inserted?.length ?? 0,
-      skipped: rows.length - (inserted?.length ?? 0),
+      skipped: skipped + (toInsert.length - (inserted?.length ?? 0)),
     });
   } catch (err) {
     return json({ error: (err as Error).message }, { status: 500 });

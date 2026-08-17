@@ -1,0 +1,12 @@
+-- The blind uniqueness on (account_id, occurred_at, amount, description)
+-- couldn't distinguish "this exact row was already imported" from "two
+-- separate real transactions that happen to share a date/amount/label"
+-- (two coffees, two rides, a recurring charge hit twice the same day) --
+-- both a CSV re-import and a completely ordinary day silently collapsed
+-- to one row, with no error surfaced anywhere. Import-time dedup moves
+-- into supabase/functions/parse-statement, which can tell those two cases
+-- apart by counting against what's already in the database rather than
+-- leaning on a DB constraint that can't see the difference. Manual entry
+-- (add-transaction-dialog.tsx) never wanted this constraint either -- two
+-- honestly-entered identical purchases on the same day should just save.
+drop index transactions_dedupe_idx;

@@ -6,7 +6,7 @@ import { resolvePeriod, periodRange, type ResolvedPeriod } from "@/lib/period";
 import { formatCurrency } from "@/lib/format";
 import { dailySpendTrend, spendTrendSeries, incomeTrendSeries, cashFlowSeries } from "@/lib/trend";
 import { groupByCurrency } from "@/lib/group-by-currency";
-import { accountBalances, sumByCurrency } from "@/lib/balance";
+import { sumByCurrency } from "@/lib/balance";
 import { BalanceCard } from "@/components/balance-summary";
 import { PeriodToggle } from "@/components/period-toggle";
 import { StatCard } from "@/components/stat-card";
@@ -133,10 +133,15 @@ async function DashboardData({
 
   const supabase = await createClient();
 
-  const [{ data: allTransactions }, { data: transactions }, { data: compareTransactions }] = await Promise.all([
-    // Unscoped by period -- current balance is a snapshot as of now, not
-    // "as of this week/month".
-    supabase.from("transactions").select("account_id, amount").eq("user_id", userId),
+  const [{ data: balanceRows }, { data: transactions }, { data: compareTransactions }] = await Promise.all([
+    // Computed in Postgres (not fetched-and-summed client-side) -- current
+    // balance is a snapshot as of now, not "as of this week/month", and an
+    // account with enough history can hold more transactions than
+    // PostgREST will return from a plain unbounded select. See
+    // account_balances() in supabase/migrations/0016.
+    accounts.length > 0
+      ? supabase.rpc("account_balances", { target_account_ids: accounts.map((a) => a.id) })
+      : Promise.resolve({ data: [] as { account_id: string; user_id: string; currency: string; balance: number }[] }),
     supabase
       .from("transactions")
       .select("id, account_id, occurred_at, description, amount, currency, category_id")
@@ -158,7 +163,7 @@ async function DashboardData({
         }),
   ]);
 
-  const balances = accountBalances(accounts, allTransactions ?? []);
+  const balances = (balanceRows ?? []).map((b) => ({ ...b, balance: Number(b.balance) }));
   const balanceTotals = [...sumByCurrency(balances)].map(([currency, amount]) => ({
     currency,
     amount,

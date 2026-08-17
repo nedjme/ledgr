@@ -5,7 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { resolvePeriod, periodRange, type ResolvedPeriod } from "@/lib/period";
 import { formatCurrency } from "@/lib/format";
 import { groupByCurrency } from "@/lib/group-by-currency";
-import { accountBalances, sumByCurrency } from "@/lib/balance";
+import { sumByCurrency } from "@/lib/balance";
 import { spendTrendSeries, incomeTrendSeries, cashFlowSeries } from "@/lib/trend";
 import { PeriodToggle } from "@/components/period-toggle";
 import { StatCard } from "@/components/stat-card";
@@ -157,45 +157,29 @@ async function HouseholdDashboardData({
   ]);
 
   const memberIds = (members ?? []).map((m) => m.user_id);
-  const otherMemberIds = memberIds.filter((id) => id !== userId);
 
-  const [{ data: profiles }, { data: memberAccounts }, { data: ownTransactions }, { data: sharedTransactions }] =
-    memberIds.length
-      ? await Promise.all([
-          supabase.from("profiles").select("id, display_name").in("id", memberIds),
-          supabase
-            .from("accounts")
-            .select("id, user_id, currency, starting_balance")
-            .in("user_id", memberIds),
-          // Unscoped by period -- current balance is a snapshot as of now.
-          // The current user's own balance uses every transaction they've
-          // ever logged (same query the personal dashboard uses), not just
-          // the ones tagged household_id -- a transaction recorded before a
-          // household existed (e.g. an import done pre-signup) never gets
-          // retroactively tagged, so scoping this to household_id alone
-          // undercounts your own balance.
-          supabase
-            .from("transactions")
-            .select("account_id, user_id, amount, currency")
-            .eq("user_id", userId),
-          // A partner's balance, in contrast, can only be built from what
-          // they've explicitly shared with the household -- RLS hides the
-          // rest of their transactions, so this may undercount if they have
-          // unshared history of their own.
-          otherMemberIds.length
-            ? supabase
-                .from("transactions")
-                .select("account_id, user_id, amount, currency")
-                .eq("household_id", householdId)
-                .in("user_id", otherMemberIds)
-            : Promise.resolve({ data: [] as { account_id: string; user_id: string; amount: number; currency: string }[] }),
-        ])
-      : [{ data: [] }, { data: [] }, { data: [] }, { data: [] }];
+  const [{ data: profiles }, { data: memberAccounts }] = memberIds.length
+    ? await Promise.all([
+        supabase.from("profiles").select("id, display_name").in("id", memberIds),
+        supabase.from("accounts").select("id, user_id, currency, starting_balance").in("user_id", memberIds),
+      ])
+    : [{ data: [] }, { data: [] }];
 
   const nameById = new Map((profiles ?? []).map((p) => [p.id, p.display_name || "Partner"]));
 
-  const allMemberTransactions = [...(ownTransactions ?? []), ...(sharedTransactions ?? [])];
-  const balances = accountBalances(memberAccounts ?? [], allMemberTransactions);
+  // Computed in Postgres, not fetched-and-summed client-side -- besides
+  // sidestepping PostgREST's row cap on a large transaction history (see
+  // account_balances() in supabase/migrations/0016), running as the
+  // calling user means transactions RLS itself decides what's summed:
+  // all of your own transactions regardless of household_id, plus only
+  // the household_id-tagged ones from a partner. No need to fetch and
+  // merge those two sets by hand here anymore.
+  const memberAccountIds = (memberAccounts ?? []).map((a) => a.id);
+  const { data: balanceRows } =
+    memberAccountIds.length > 0
+      ? await supabase.rpc("account_balances", { target_account_ids: memberAccountIds })
+      : { data: [] as { account_id: string; user_id: string; currency: string; balance: number }[] };
+  const balances = (balanceRows ?? []).map((b) => ({ ...b, balance: Number(b.balance) }));
   const balanceTotals = [...sumByCurrency(balances)].map(([currency, amount]) => ({
     currency,
     amount,

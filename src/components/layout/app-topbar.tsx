@@ -29,6 +29,7 @@ const TITLES: { test: (path: string) => boolean; title: string }[] = [
   { test: (p) => p.startsWith("/accounts/import"), title: "Import statement" },
   { test: (p) => p.startsWith("/accounts"), title: "Accounts" },
   { test: (p) => p.startsWith("/transactions"), title: "Transactions" },
+  { test: (p) => p.startsWith("/budgets"), title: "Budgets & Goals" },
   { test: (p) => p.startsWith("/settings"), title: "Settings" },
 ];
 

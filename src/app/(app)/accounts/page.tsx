@@ -10,19 +10,22 @@ export default async function AccountsPage() {
   const user = await requireUser();
   const supabase = await createClient();
 
-  const [{ data: accounts }, { data: transactions }] = await Promise.all([
-    supabase
-      .from("accounts")
-      .select("id, name, currency, starting_balance")
-      .eq("user_id", user.id)
-      .order("name"),
-    supabase.from("transactions").select("account_id, amount").eq("user_id", user.id),
-  ]);
+  const { data: accounts } = await supabase
+    .from("accounts")
+    .select("id, name, currency, starting_balance")
+    .eq("user_id", user.id)
+    .order("name");
 
-  const balanceByAccount = new Map<string, number>();
-  for (const t of transactions ?? []) {
-    balanceByAccount.set(t.account_id, (balanceByAccount.get(t.account_id) ?? 0) + t.amount);
-  }
+  // Computed in Postgres, not fetched-and-summed client-side -- an account
+  // with enough transaction history can exceed what PostgREST returns from
+  // a plain unbounded select. See account_balances() in
+  // supabase/migrations/0016.
+  const accountIds = (accounts ?? []).map((a) => a.id);
+  const { data: balanceRows } =
+    accountIds.length > 0
+      ? await supabase.rpc("account_balances", { target_account_ids: accountIds })
+      : { data: [] as { account_id: string; balance: number }[] };
+  const balanceByAccount = new Map((balanceRows ?? []).map((b) => [b.account_id, Number(b.balance)]));
 
   return (
     <div className="space-y-6">
@@ -43,7 +46,7 @@ export default async function AccountsPage() {
             <AccountCard
               key={account.id}
               account={account}
-              balance={account.starting_balance + (balanceByAccount.get(account.id) ?? 0)}
+              balance={balanceByAccount.get(account.id) ?? account.starting_balance}
             />
           ))}
         </div>
