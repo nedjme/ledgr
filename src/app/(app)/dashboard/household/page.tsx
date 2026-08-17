@@ -16,6 +16,8 @@ import { BreakdownChart } from "@/components/charts/breakdown-chart";
 import { TrendChart } from "@/components/charts/trend-chart";
 import { CashFlowChart } from "@/components/charts/cash-flow-chart";
 import { CategorySpendCard } from "@/components/category-spend-card";
+import { CurrencyProvider } from "@/components/currency-context";
+import { CurrencyPanel } from "@/components/currency-panel";
 import { toBreakdown, type BreakdownDatum } from "@/lib/breakdown";
 import { topCategoryId } from "@/lib/category-hierarchy";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -221,6 +223,12 @@ async function HouseholdDashboardData({
   const rows = transactions ?? [];
   const byCurrency = groupByCurrency(rows);
   const compareByCurrency = groupByCurrency(compareTransactions ?? []);
+  // Busiest currency first, so a household with mostly-MAD and a handful
+  // of EUR transactions lands on MAD by default instead of whichever
+  // happened to sort alphabetically or come first in the rows.
+  const sortedCurrencies = [...byCurrency.keys()].sort(
+    (a, b) => (byCurrency.get(b)?.length ?? 0) - (byCurrency.get(a)?.length ?? 0),
+  );
 
   const compareTotalsByCurrency = new Map<string, { totalOut: number; totalIn: number }>();
   // Per currency, per top-level category id -- lets the category
@@ -247,7 +255,7 @@ async function HouseholdDashboardData({
   }
 
   return (
-    <>
+    <CurrencyProvider defaultCurrency={sortedCurrencies[0] ?? "MAD"}>
       <div className="order-1">
         <BalanceCard title="Household balance" totals={balanceTotals} byPerson={balanceByPersonGroups} />
       </div>
@@ -260,7 +268,9 @@ async function HouseholdDashboardData({
           </CardContent>
         </Card>
       ) : (
-        [...byCurrency.entries()].map(([currency, currencyRows]) => {
+        <CurrencyPanel currencies={sortedCurrencies}>
+        {sortedCurrencies.map((currency) => {
+          const currencyRows = byCurrency.get(currency) ?? [];
           const totalOut = currencyRows
             .filter((t) => t.amount < 0)
             .reduce((sum, t) => sum + Math.abs(t.amount), 0);
@@ -448,7 +458,8 @@ async function HouseholdDashboardData({
               </div>
             </div>
           );
-        })
+        })}
+        </CurrencyPanel>
       )}
 
       {!resolved.compareOn && (
@@ -487,6 +498,6 @@ async function HouseholdDashboardData({
         </Card>
       )}
       </div>
-    </>
+    </CurrencyProvider>
   );
 }
