@@ -1,6 +1,7 @@
 "use client";
 
 import { ChevronLeft, ChevronRight } from "lucide-react";
+import { Card } from "@/components/ui/card";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { PeriodDatePicker } from "@/components/period-date-picker";
@@ -90,12 +91,53 @@ export function PeriodToggle({
   const isBoundedPeriod = period !== null && period !== "custom";
   const atPresent = isBoundedPeriod && isCurrentPeriod(period, anchor);
 
+  function handleTabChange(v: string | null) {
+    if (!v) return;
+    if (v === "all" || v === "custom") navigate({ period: v });
+    else navigate({ period: v as Period, anchor: null });
+  }
+
+  const tabTriggers = (
+    <>
+      {allowAll && (
+        <TabsTrigger value="all" className="px-3 py-1.5">
+          All time
+        </TabsTrigger>
+      )}
+      <TabsTrigger value="week" className="px-3 py-1.5">
+        Week
+      </TabsTrigger>
+      <TabsTrigger value="month" className="px-3 py-1.5">
+        Month
+      </TabsTrigger>
+      {allowYear && (
+        <TabsTrigger value="year" className="px-3 py-1.5">
+          Year
+        </TabsTrigger>
+      )}
+      {allowCustom && (
+        <TabsTrigger value="custom" className="px-3 py-1.5">
+          Custom
+        </TabsTrigger>
+      )}
+    </>
+  );
+
   return (
-    <div className="flex flex-wrap items-center gap-3">
-      {/* Order is mobile-first: the type tabs on their own top row, then
-          the date nav, then Compare -- on sm:+ it reverts to the original
-          left-to-right reading order (date nav, Compare, tabs), which
-          already fits on one line at that width. */}
+    <Card size="sm" className="flex-1 gap-3 overflow-hidden px-3 pt-0 sm:pt-3">
+      {/* Full-bleed on mobile -- flush against the card's top/left/right
+          edges instead of sitting inset with the rest of the toolbar, so
+          it reads as the card's own top bar rather than just another
+          floating control. Swaps for the compact inline version (below,
+          sharing a row with the date nav) once there's room at sm:+. */}
+      <div className="-mx-3 sm:hidden">
+        <Tabs value={period ?? "all"} onValueChange={handleTabChange}>
+          <TabsList className="h-11 w-full rounded-none rounded-t-2xl p-1 group-data-horizontal/tabs:h-11">
+            {tabTriggers}
+          </TabsList>
+        </Tabs>
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
       {isBoundedPeriod && (
         <div className="order-2 flex items-center gap-1 sm:order-1">
           <Button
@@ -148,39 +190,17 @@ export function PeriodToggle({
       {period !== null && (
         <CompareToggle period={period} className="order-3 sm:order-2" />
       )}
+      {/* Compact inline version -- sm: and up only, where it shares the
+          row with the date nav and Compare instead of needing its own
+          full-bleed bar. */}
       <Tabs
         value={period ?? "all"}
-        onValueChange={(v) => {
-          if (!v) return;
-          if (v === "all" || v === "custom") navigate({ period: v });
-          else navigate({ period: v as Period, anchor: null });
-        }}
-        className="order-1 sm:order-3"
+        onValueChange={handleTabChange}
+        className="hidden sm:order-3 sm:block"
       >
-        <TabsList className="h-9 p-1 group-data-horizontal/tabs:h-9">
-          {allowAll && (
-            <TabsTrigger value="all" className="px-3 py-1.5">
-              All time
-            </TabsTrigger>
-          )}
-          <TabsTrigger value="week" className="px-3 py-1.5">
-            Week
-          </TabsTrigger>
-          <TabsTrigger value="month" className="px-3 py-1.5">
-            Month
-          </TabsTrigger>
-          {allowYear && (
-            <TabsTrigger value="year" className="px-3 py-1.5">
-              Year
-            </TabsTrigger>
-          )}
-          {allowCustom && (
-            <TabsTrigger value="custom" className="px-3 py-1.5">
-              Custom
-            </TabsTrigger>
-          )}
-        </TabsList>
+        <TabsList className="h-9 p-1 group-data-horizontal/tabs:h-9">{tabTriggers}</TabsList>
       </Tabs>
-    </div>
+      </div>
+    </Card>
   );
 }

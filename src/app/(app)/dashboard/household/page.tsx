@@ -63,7 +63,7 @@ export default async function HouseholdDashboardPage({
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="order-2 flex justify-end">
+      <div className="order-2 flex">
         <PeriodToggle allowYear allowCustom />
       </div>
 
