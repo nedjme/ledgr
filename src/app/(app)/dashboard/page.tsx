@@ -3,7 +3,7 @@ import { requireUser, getHousehold } from "@/lib/data";
 import { createClient } from "@/lib/supabase/server";
 import { resolvePeriod, periodRange } from "@/lib/period";
 import { formatCurrency } from "@/lib/format";
-import { dailySpendTrend } from "@/lib/trend";
+import { dailySpendTrend, spendTrendSeries } from "@/lib/trend";
 import { groupByCurrency } from "@/lib/group-by-currency";
 import { accountBalances, sumByCurrency } from "@/lib/balance";
 import { BalanceCard } from "@/components/balance-summary";
@@ -13,9 +13,11 @@ import { HeroSummaryCard } from "@/components/hero-summary-card";
 import { AddTransactionDialog } from "@/components/add-transaction-dialog";
 import { TransactionList } from "@/components/transaction-list";
 import { CategorySpendCard } from "@/components/category-spend-card";
+import { SpendTrendChart } from "@/components/charts/spend-trend-chart";
 import { toBreakdown, type BreakdownDatum } from "@/lib/breakdown";
 import { topCategoryId } from "@/lib/category-hierarchy";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
 export default async function DashboardPage({
@@ -67,18 +69,21 @@ export default async function DashboardPage({
     resolved.compareRange
       ? supabase
           .from("transactions")
-          .select("amount, currency, category_id")
+          .select("amount, currency, category_id, occurred_at")
           .eq("user_id", user.id)
           .gte("occurred_at", resolved.compareRange.start)
           .lte("occurred_at", resolved.compareRange.end)
       : Promise.resolve({
-          data: null as { amount: number; currency: string; category_id: string | null }[] | null,
+          data: null as
+            | { amount: number; currency: string; category_id: string | null; occurred_at: string }[]
+            | null,
         }),
   ]);
 
   const categoryById = new Map((categories ?? []).map((c) => [c.id, c]));
   const rows = transactions ?? [];
   const byCurrency = groupByCurrency(rows);
+  const compareByCurrency = groupByCurrency(compareTransactions ?? []);
 
   const compareTotalsByCurrency = new Map<string, { totalOut: number; totalIn: number }>();
   // Per currency, per top-level category id -- lets the category
@@ -147,6 +152,21 @@ export default async function DashboardPage({
             .filter((t) => t.amount > 0)
             .reduce((sum, t) => sum + t.amount, 0);
           const trend = dailySpendTrend(currencyRows, start, end);
+
+          const trendSeries = spendTrendSeries(currencyRows, start, end);
+          const compareTrendSeries = resolved.compareRange
+            ? spendTrendSeries(
+                compareByCurrency.get(currency) ?? [],
+                resolved.compareRange.start,
+                resolved.compareRange.end,
+              )
+            : null;
+          // Aligned by index (day 1 of this month vs. day 1 of last month),
+          // not by calendar date -- the two periods rarely share one.
+          const trendChartData = trendSeries.map((point, i) => ({
+            ...point,
+            compareValue: compareTrendSeries?.[i]?.value ?? null,
+          }));
 
           const comparePrevForCurrency = comparePrevByCategory.get(currency);
           const byCategory = new Map<string, BreakdownDatum>();
@@ -218,6 +238,22 @@ export default async function DashboardPage({
                   compareLabel={compareLabel}
                 />
               </div>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Spending trend</CardTitle>
+                  <CardAction>
+                    <Badge variant="secondary">{currency}</Badge>
+                  </CardAction>
+                </CardHeader>
+                <CardContent>
+                  <SpendTrendChart
+                    data={trendChartData}
+                    currency={currency}
+                    compareLabel={compareLabel}
+                  />
+                </CardContent>
+              </Card>
 
               <CategorySpendCard
                 compact={compactBreakdown}
