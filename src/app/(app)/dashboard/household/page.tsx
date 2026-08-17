@@ -1,24 +1,30 @@
+import { Suspense } from "react";
 import Link from "next/link";
 import { requireUser, getHousehold } from "@/lib/data";
 import { createClient } from "@/lib/supabase/server";
-import { resolvePeriod, periodRange } from "@/lib/period";
+import { resolvePeriod, periodRange, type ResolvedPeriod } from "@/lib/period";
 import { formatCurrency } from "@/lib/format";
 import { groupByCurrency } from "@/lib/group-by-currency";
 import { accountBalances, sumByCurrency } from "@/lib/balance";
-import { spendTrendSeries } from "@/lib/trend";
+import { spendTrendSeries, incomeTrendSeries, cashFlowSeries } from "@/lib/trend";
 import { PeriodToggle } from "@/components/period-toggle";
 import { StatCard } from "@/components/stat-card";
 import { HeroSummaryCard } from "@/components/hero-summary-card";
 import { BalanceCard } from "@/components/balance-summary";
 import { TransactionList } from "@/components/transaction-list";
 import { BreakdownChart } from "@/components/charts/breakdown-chart";
-import { SpendTrendChart } from "@/components/charts/spend-trend-chart";
+import { TrendChart } from "@/components/charts/trend-chart";
+import { CashFlowChart } from "@/components/charts/cash-flow-chart";
 import { CategorySpendCard } from "@/components/category-spend-card";
 import { toBreakdown, type BreakdownDatum } from "@/lib/breakdown";
 import { topCategoryId } from "@/lib/category-hierarchy";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { HeroSkeleton, StatCardsSkeleton, ChartCardSkeleton, ListSkeleton } from "@/components/skeletons";
+
+type CategoryRow = { id: string; name: string; icon: string | null; color: string | null; parent_id: string | null };
+type AccountRow = { id: string; name: string; currency: string };
 
 export default async function HouseholdDashboardPage({
   searchParams,
@@ -55,44 +61,17 @@ export default async function HouseholdDashboardPage({
 
   const params = await searchParams;
   const resolved = resolvePeriod(params);
-  // A custom range with no end picked yet still needs *something* to query
-  // -- falls back to the current month rather than fetching nothing.
-  const { start, end } = resolved.range ?? periodRange("month", resolved.anchor);
 
   const supabase = await createClient();
 
-  const [
-    { data: categories },
-    { data: transactions },
-    { data: members },
-    { data: accounts },
-    { data: compareTransactions },
-  ] = await Promise.all([
-    supabase
-      .from("categories")
-      .select("id, name, icon, color, parent_id")
-      .eq("household_id", household.id),
-    supabase
-      .from("transactions")
-      .select("id, account_id, occurred_at, description, amount, currency, category_id, user_id")
-      .eq("household_id", household.id)
-      .gte("occurred_at", start)
-      .lte("occurred_at", end)
-      .order("occurred_at", { ascending: false }),
+  // Period-independent -- household roster, balances, and categories don't
+  // change based on the selected period, so they're fetched here (outside
+  // the Suspense boundary below) and the balance card + toolbar render with
+  // them immediately, without waiting on the period-scoped transactions.
+  const [{ data: categories }, { data: members }, { data: accounts }] = await Promise.all([
+    supabase.from("categories").select("id, name, icon, color, parent_id").eq("household_id", household.id),
     supabase.from("household_members").select("user_id").eq("household_id", household.id),
     supabase.from("accounts").select("id, name, currency").eq("user_id", user.id),
-    resolved.compareRange
-      ? supabase
-          .from("transactions")
-          .select("amount, currency, category_id, occurred_at")
-          .eq("household_id", household.id)
-          .gte("occurred_at", resolved.compareRange.start)
-          .lte("occurred_at", resolved.compareRange.end)
-      : Promise.resolve({
-          data: null as
-            | { amount: number; currency: string; category_id: string | null; occurred_at: string }[]
-            | null,
-        }),
   ]);
 
   const memberIds = (members ?? []).map((m) => m.user_id);
@@ -132,34 +111,6 @@ export default async function HouseholdDashboardPage({
       : [{ data: [] }, { data: [] }, { data: [] }, { data: [] }];
 
   const nameById = new Map((profiles ?? []).map((p) => [p.id, p.display_name || "Partner"]));
-  const categoryById = new Map((categories ?? []).map((c) => [c.id, c]));
-  const rows = transactions ?? [];
-  const byCurrency = groupByCurrency(rows);
-  const compareByCurrency = groupByCurrency(compareTransactions ?? []);
-
-  const compareTotalsByCurrency = new Map<string, { totalOut: number; totalIn: number }>();
-  // Per currency, per top-level category id -- lets the category
-  // breakdown show a per-row delta alongside the overall totals.
-  const comparePrevByCategory = new Map<string, Map<string, number>>();
-  for (const t of compareTransactions ?? []) {
-    const entry = compareTotalsByCurrency.get(t.currency) ?? { totalOut: 0, totalIn: 0 };
-    if (t.amount < 0) entry.totalOut += Math.abs(t.amount);
-    else entry.totalIn += t.amount;
-    compareTotalsByCurrency.set(t.currency, entry);
-
-    if (t.amount >= 0) continue;
-    const rawCategory = t.category_id ? categoryById.get(t.category_id) : null;
-    const catId = topCategoryId(rawCategory, categoryById) ?? "uncategorized";
-    const byCat = comparePrevByCategory.get(t.currency) ?? new Map<string, number>();
-    byCat.set(catId, (byCat.get(catId) ?? 0) + Math.abs(t.amount));
-    comparePrevByCategory.set(t.currency, byCat);
-  }
-  const compareLabel = resolved.compareLabel ?? undefined;
-
-  function pctChange(current: number, previous: number): number | null {
-    if (previous === 0) return current === 0 ? 0 : null;
-    return ((current - previous) / previous) * 100;
-  }
 
   const allTransactions = [...(ownTransactions ?? []), ...(sharedTransactions ?? [])];
   const balances = accountBalances(memberAccounts ?? [], allTransactions);
@@ -207,6 +158,117 @@ export default async function HouseholdDashboardPage({
         />
       </div>
 
+      {/* Keyed by the resolved query string so every distinct filter change
+          remounts this boundary and re-shows the skeleton, instead of
+          leaving the previous period's numbers frozen on screen for the
+          duration of the refetch -- see the equivalent comment in the
+          personal dashboard's page.tsx. */}
+      <Suspense key={resolved.queryParams} fallback={<HouseholdDataSkeleton />}>
+        <HouseholdDashboardData
+          userId={user.id}
+          householdId={household.id}
+          householdName={household.name}
+          resolved={resolved}
+          categories={categories ?? []}
+          accounts={accounts ?? []}
+          nameById={nameById}
+        />
+      </Suspense>
+    </div>
+  );
+}
+
+function HouseholdDataSkeleton() {
+  return (
+    <div className="space-y-6">
+      <HeroSkeleton />
+      <StatCardsSkeleton />
+      <ChartCardSkeleton />
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <ChartCardSkeleton />
+        <ChartCardSkeleton />
+      </div>
+      <ListSkeleton rows={6} />
+    </div>
+  );
+}
+
+async function HouseholdDashboardData({
+  userId,
+  householdId,
+  householdName,
+  resolved,
+  categories,
+  accounts,
+  nameById,
+}: {
+  userId: string;
+  householdId: string;
+  householdName: string | null;
+  resolved: ResolvedPeriod;
+  categories: CategoryRow[];
+  accounts: AccountRow[];
+  nameById: Map<string, string>;
+}) {
+  // A custom range with no end picked yet still needs *something* to query
+  // -- falls back to the current month rather than fetching nothing.
+  const { start, end } = resolved.range ?? periodRange("month", resolved.anchor);
+
+  const supabase = await createClient();
+
+  const [{ data: transactions }, { data: compareTransactions }] = await Promise.all([
+    supabase
+      .from("transactions")
+      .select("id, account_id, occurred_at, description, amount, currency, category_id, user_id")
+      .eq("household_id", householdId)
+      .gte("occurred_at", start)
+      .lte("occurred_at", end)
+      .order("occurred_at", { ascending: false }),
+    resolved.compareRange
+      ? supabase
+          .from("transactions")
+          .select("amount, currency, category_id, occurred_at")
+          .eq("household_id", householdId)
+          .gte("occurred_at", resolved.compareRange.start)
+          .lte("occurred_at", resolved.compareRange.end)
+      : Promise.resolve({
+          data: null as
+            | { amount: number; currency: string; category_id: string | null; occurred_at: string }[]
+            | null,
+        }),
+  ]);
+
+  const categoryById = new Map(categories.map((c) => [c.id, c]));
+  const rows = transactions ?? [];
+  const byCurrency = groupByCurrency(rows);
+  const compareByCurrency = groupByCurrency(compareTransactions ?? []);
+
+  const compareTotalsByCurrency = new Map<string, { totalOut: number; totalIn: number }>();
+  // Per currency, per top-level category id -- lets the category
+  // breakdown show a per-row delta alongside the overall totals.
+  const comparePrevByCategory = new Map<string, Map<string, number>>();
+  for (const t of compareTransactions ?? []) {
+    const entry = compareTotalsByCurrency.get(t.currency) ?? { totalOut: 0, totalIn: 0 };
+    if (t.amount < 0) entry.totalOut += Math.abs(t.amount);
+    else entry.totalIn += t.amount;
+    compareTotalsByCurrency.set(t.currency, entry);
+
+    if (t.amount >= 0) continue;
+    const rawCategory = t.category_id ? categoryById.get(t.category_id) : null;
+    const catId = topCategoryId(rawCategory, categoryById) ?? "uncategorized";
+    const byCat = comparePrevByCategory.get(t.currency) ?? new Map<string, number>();
+    byCat.set(catId, (byCat.get(catId) ?? 0) + Math.abs(t.amount));
+    comparePrevByCategory.set(t.currency, byCat);
+  }
+  const compareLabel = resolved.compareLabel ?? undefined;
+
+  function pctChange(current: number, previous: number): number | null {
+    if (previous === 0) return current === 0 ? 0 : null;
+    return ((current - previous) / previous) * 100;
+  }
+
+  return (
+    <>
       {rows.length === 0 ? (
         <Card>
           <CardContent className="py-8 text-center text-sm text-muted-foreground">
@@ -234,6 +296,21 @@ export default async function HouseholdDashboardPage({
             ...point,
             compareValue: compareTrendSeries?.[i]?.value ?? null,
           }));
+
+          const incomeTrendSeriesData = incomeTrendSeries(currencyRows, start, end);
+          const compareIncomeTrendSeries = resolved.compareRange
+            ? incomeTrendSeries(
+                compareByCurrency.get(currency) ?? [],
+                resolved.compareRange.start,
+                resolved.compareRange.end,
+              )
+            : null;
+          const incomeTrendChartData = incomeTrendSeriesData.map((point, i) => ({
+            ...point,
+            compareValue: compareIncomeTrendSeries?.[i]?.value ?? null,
+          }));
+
+          const cashFlowChartData = cashFlowSeries(currencyRows, start, end);
 
           const comparePrevForCurrency = comparePrevByCategory.get(currency);
           const byCategory = new Map<string, BreakdownDatum>();
@@ -277,7 +354,7 @@ export default async function HouseholdDashboardPage({
             <div key={currency} className="space-y-6">
               <HeroSummaryCard
                 eyebrow={`${resolved.label} · ${currency}`}
-                label={household.name ?? "Household"}
+                label={householdName ?? "Household"}
                 value={formatCurrency(totalIn - totalOut, currency)}
                 meta={
                   <>
@@ -312,21 +389,63 @@ export default async function HouseholdDashboardPage({
                 />
               </div>
 
-              <Card>
-                <CardHeader>
-                  <CardTitle>Spending trend</CardTitle>
-                  <CardAction>
-                    <Badge variant="secondary">{currency}</Badge>
-                  </CardAction>
-                </CardHeader>
-                <CardContent>
-                  <SpendTrendChart
-                    data={trendChartData}
-                    currency={currency}
-                    compareLabel={compareLabel}
-                  />
-                </CardContent>
-              </Card>
+              {/* Compare's whole point is a period-over-period story, which
+                  is what the dashed overlay on Spending/Income trend shows --
+                  Cash flow (income vs. spend timing within *this* period)
+                  has no compare mode of its own (see cash-flow-chart.tsx),
+                  so it isn't useful to show alongside a compare. Swap rather
+                  than stack: trend cards in this slot during a compare,
+                  Cash flow otherwise. */}
+              {resolved.compareOn ? (
+                <>
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Spending trend</CardTitle>
+                      <CardAction>
+                        <Badge variant="secondary">{currency}</Badge>
+                      </CardAction>
+                    </CardHeader>
+                    <CardContent>
+                      <TrendChart
+                        data={trendChartData}
+                        currency={currency}
+                        color="var(--destructive)"
+                        emptyLabel="No spending in this period yet."
+                        compareLabel={compareLabel}
+                      />
+                    </CardContent>
+                  </Card>
+                  <Card>
+                    <CardHeader>
+                      <CardTitle>Income trend</CardTitle>
+                      <CardAction>
+                        <Badge variant="secondary">{currency}</Badge>
+                      </CardAction>
+                    </CardHeader>
+                    <CardContent>
+                      <TrendChart
+                        data={incomeTrendChartData}
+                        currency={currency}
+                        color="var(--chart-3)"
+                        emptyLabel="No income in this period yet."
+                        compareLabel={compareLabel}
+                      />
+                    </CardContent>
+                  </Card>
+                </>
+              ) : (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Cash flow</CardTitle>
+                    <CardAction>
+                      <Badge variant="secondary">{currency}</Badge>
+                    </CardAction>
+                  </CardHeader>
+                  <CardContent>
+                    <CashFlowChart data={cashFlowChartData} currency={currency} />
+                  </CardContent>
+                </Card>
+              )}
 
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                 <CategorySpendCard
@@ -348,39 +467,41 @@ export default async function HouseholdDashboardPage({
         })
       )}
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Recent transactions</CardTitle>
-          <CardAction>
-            <Button
-              variant="ghost"
-              size="sm"
-              nativeButton={false}
-              render={<Link href={`/transactions?scope=household&${resolved.queryParams}`} />}
-            >
-              View all
-            </Button>
-          </CardAction>
-        </CardHeader>
-        <CardContent>
-          <TransactionList
-            showOwner
-            rows={rows.slice(0, 15).map((t) => ({
-              id: t.id,
-              account_id: t.account_id,
-              category_id: t.category_id,
-              user_id: t.user_id,
-              occurred_at: t.occurred_at,
-              description: t.description,
-              amount: t.amount,
-              currency: t.currency,
-              category_name: t.category_id ? categoryById.get(t.category_id)?.name ?? null : null,
-              owner_name: nameById.get(t.user_id) ?? null,
-            }))}
-            editable={{ currentUserId: user.id, accounts: accounts ?? [], categories: categories ?? [] }}
-          />
-        </CardContent>
-      </Card>
-    </div>
+      {!resolved.compareOn && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Recent transactions</CardTitle>
+            <CardAction>
+              <Button
+                variant="ghost"
+                size="sm"
+                nativeButton={false}
+                render={<Link href={`/transactions?scope=household&${resolved.queryParams}`} />}
+              >
+                View all
+              </Button>
+            </CardAction>
+          </CardHeader>
+          <CardContent>
+            <TransactionList
+              showOwner
+              rows={rows.slice(0, 15).map((t) => ({
+                id: t.id,
+                account_id: t.account_id,
+                category_id: t.category_id,
+                user_id: t.user_id,
+                occurred_at: t.occurred_at,
+                description: t.description,
+                amount: t.amount,
+                currency: t.currency,
+                category_name: t.category_id ? categoryById.get(t.category_id)?.name ?? null : null,
+                owner_name: nameById.get(t.user_id) ?? null,
+              }))}
+              editable={{ currentUserId: userId, accounts, categories }}
+            />
+          </CardContent>
+        </Card>
+      )}
+    </>
   );
 }

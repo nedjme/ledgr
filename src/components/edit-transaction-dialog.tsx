@@ -20,6 +20,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { CategoryCombobox } from "@/components/category-combobox";
+import { TransactionDatePicker } from "@/components/transaction-date-picker";
 import { createClient } from "@/lib/supabase/client";
 
 type EditableTransaction = {
@@ -172,10 +173,9 @@ export function EditTransactionDialog({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="edit_occurred_at">Date</Label>
-              <Input
+              <TransactionDatePicker
                 id="edit_occurred_at"
                 name="occurred_at"
-                type="date"
                 defaultValue={transaction.occurred_at}
                 required
               />

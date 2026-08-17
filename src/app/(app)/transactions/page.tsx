@@ -1,6 +1,7 @@
+import { Suspense } from "react";
 import { requireUser, getHousehold } from "@/lib/data";
 import { createClient } from "@/lib/supabase/server";
-import { resolvePeriod } from "@/lib/period";
+import { resolvePeriod, type ResolvedPeriod } from "@/lib/period";
 import { formatCurrency } from "@/lib/format";
 import { TransactionsFilterBar } from "@/components/transactions-filter-bar";
 import { PeriodToggle } from "@/components/period-toggle";
@@ -10,27 +11,33 @@ import { BreakdownChart } from "@/components/charts/breakdown-chart";
 import { Pagination } from "@/components/pagination";
 import { StatCard } from "@/components/stat-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { ChartCardSkeleton, ListSkeleton } from "@/components/skeletons";
 import type { BreakdownDatum } from "@/lib/breakdown";
 
 const PAGE_SIZE = 30;
 
+type CategoryRow = { id: string; name: string; icon: string | null; color: string | null; parent_id: string | null };
+type AccountRow = { id: string; name: string; currency: string };
+
+type SearchParams = {
+  scope?: string;
+  q?: string;
+  category?: string;
+  page?: string;
+  period?: string;
+  anchor?: string;
+  start?: string;
+  end?: string;
+  compare?: string;
+  compareAnchor?: string;
+  compareStart?: string;
+  compareEnd?: string;
+};
+
 export default async function TransactionsPage({
   searchParams,
 }: {
-  searchParams: Promise<{
-    scope?: string;
-    q?: string;
-    category?: string;
-    page?: string;
-    period?: string;
-    anchor?: string;
-    start?: string;
-    end?: string;
-    compare?: string;
-    compareAnchor?: string;
-    compareStart?: string;
-    compareEnd?: string;
-  }>;
+  searchParams: Promise<SearchParams>;
 }) {
   const user = await requireUser();
   const household = await getHousehold(user.id);
@@ -46,9 +53,106 @@ export default async function TransactionsPage({
   // "month" -- so it's layered on top here rather than passed down.
   const isAllTime = !params.period;
   const resolved = resolvePeriod(params);
-  const customRange = resolved.customRange;
+
+  const supabase = await createClient();
+
+  // Period/filter-independent -- the category list itself doesn't change as
+  // you type a search or flip periods, so it's fetched here, outside the
+  // Suspense boundary below, letting the filter bar and period toggle render
+  // and stay interactive immediately instead of disappearing behind a
+  // skeleton alongside the query results while those refetch.
+  const [{ data: categories }, { data: accounts }] = await Promise.all([
+    supabase
+      .from("categories")
+      .select("id, name, icon, color, parent_id")
+      .or(household ? `household_id.eq.${household.id}` : "household_id.is.null")
+      .order("name"),
+    supabase.from("accounts").select("id, name, currency").eq("user_id", user.id),
+  ]);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <TransactionsFilterBar
+          categories={categories ?? []}
+          showScope={!!household}
+          scope={scope}
+          q={q}
+          category={category}
+        />
+        <PeriodToggle
+          period={isAllTime ? null : resolved.mode}
+          anchor={resolved.anchor}
+          customRange={resolved.customRange}
+          compareOn={!isAllTime && resolved.compareOn}
+          compareAnchor={resolved.compareAnchor}
+          compareRange={resolved.compareRange}
+          allowAll
+          allowYear
+          allowCustom
+        />
+      </div>
+
+      {/* Keyed by every filter-affecting param so a search keystroke, a
+          category pick, a page click, or a period change all remount this
+          boundary and re-show its skeleton -- without a key, React keeps the
+          previous page's rows frozen on screen for the duration of the
+          refetch (a transition-update default), which reads as the filter
+          not having done anything rather than as a fast reload. */}
+      <Suspense key={JSON.stringify(params)} fallback={<TransactionsDataSkeleton />}>
+        <TransactionsData
+          userId={user.id}
+          householdId={household?.id ?? null}
+          scope={scope}
+          q={q}
+          category={category}
+          page={page}
+          isAllTime={isAllTime}
+          resolved={resolved}
+          categories={categories ?? []}
+          accounts={accounts ?? []}
+          rawParams={params}
+        />
+      </Suspense>
+    </div>
+  );
+}
+
+function TransactionsDataSkeleton() {
+  return (
+    <div className="space-y-6">
+      <ChartCardSkeleton />
+      <ListSkeleton rows={10} />
+    </div>
+  );
+}
+
+async function TransactionsData({
+  userId,
+  householdId,
+  scope,
+  q,
+  category,
+  page,
+  isAllTime,
+  resolved,
+  categories,
+  accounts,
+  rawParams,
+}: {
+  userId: string;
+  householdId: string | null;
+  scope: "personal" | "household";
+  q: string;
+  category: string;
+  page: number;
+  isAllTime: boolean;
+  resolved: ResolvedPeriod;
+  categories: CategoryRow[];
+  accounts: AccountRow[];
+  rawParams: SearchParams;
+}) {
   const range = isAllTime ? null : resolved.range;
-  const compareOn = !isAllTime && resolved.compareOn;
   const compareRange = isAllTime ? null : resolved.compareRange;
   const compareLabel = isAllTime ? undefined : (resolved.compareLabel ?? undefined);
   const showReport = category !== "";
@@ -60,15 +164,7 @@ export default async function TransactionsPage({
   // to know a clicked category's subcategory ids (if any) to widen their
   // filter from "this exact category" to "this category or its children",
   // so a subcategory's spend still counts toward its parent's drill-down.
-  const { data: categories } = await supabase
-    .from("categories")
-    .select("id, name, icon, color, parent_id")
-    .or(household ? `household_id.eq.${household.id}` : "household_id.is.null")
-    .order("name");
-
-  const childCategoryIds = (categories ?? [])
-    .filter((c) => c.parent_id === category)
-    .map((c) => c.id);
+  const childCategoryIds = categories.filter((c) => c.parent_id === category).map((c) => c.id);
   const categoryFilterIds = childCategoryIds.length > 0 ? [category, ...childCategoryIds] : null;
 
   // Query construction is synchronous (no network call happens until it's
@@ -84,8 +180,8 @@ export default async function TransactionsPage({
     );
   transactionsQuery =
     scope === "household"
-      ? transactionsQuery.eq("household_id", household!.id)
-      : transactionsQuery.eq("user_id", user.id);
+      ? transactionsQuery.eq("household_id", householdId!)
+      : transactionsQuery.eq("user_id", userId);
   if (q) transactionsQuery = transactionsQuery.ilike("description", `%${q}%`);
   if (category === "uncategorized") transactionsQuery = transactionsQuery.is("category_id", null);
   else if (category) {
@@ -98,8 +194,8 @@ export default async function TransactionsPage({
   let reportQuery = supabase.from("transactions").select("amount, currency, category_id");
   reportQuery =
     scope === "household"
-      ? reportQuery.eq("household_id", household!.id)
-      : reportQuery.eq("user_id", user.id);
+      ? reportQuery.eq("household_id", householdId!)
+      : reportQuery.eq("user_id", userId);
   if (q) reportQuery = reportQuery.ilike("description", `%${q}%`);
   if (category === "uncategorized") reportQuery = reportQuery.is("category_id", null);
   else if (category) {
@@ -112,8 +208,8 @@ export default async function TransactionsPage({
   let previousReportQuery = supabase.from("transactions").select("amount, currency");
   previousReportQuery =
     scope === "household"
-      ? previousReportQuery.eq("household_id", household!.id)
-      : previousReportQuery.eq("user_id", user.id);
+      ? previousReportQuery.eq("household_id", householdId!)
+      : previousReportQuery.eq("user_id", userId);
   if (q) previousReportQuery = previousReportQuery.ilike("description", `%${q}%`);
   if (category === "uncategorized") previousReportQuery = previousReportQuery.is("category_id", null);
   else if (category) {
@@ -129,17 +225,10 @@ export default async function TransactionsPage({
 
   const from = (page - 1) * PAGE_SIZE;
 
-  const [
-    { data: accounts },
-    { data: transactions, count },
-    membersResult,
-    reportRows,
-    previousReportRows,
-  ] = await Promise.all([
-    supabase.from("accounts").select("id, name, currency").eq("user_id", user.id),
+  const [{ data: transactions, count }, membersResult, reportRows, previousReportRows] = await Promise.all([
     transactionsQuery.order("occurred_at", { ascending: false }).range(from, from + PAGE_SIZE - 1),
     scope === "household"
-      ? supabase.from("household_members").select("user_id").eq("household_id", household!.id)
+      ? supabase.from("household_members").select("user_id").eq("household_id", householdId!)
       : Promise.resolve({ data: null as { user_id: string }[] | null }),
     showTotals
       ? reportQuery
@@ -151,7 +240,7 @@ export default async function TransactionsPage({
       : Promise.resolve({ data: null as { amount: number; currency: string }[] | null }),
   ]);
 
-  const categoryById = new Map((categories ?? []).map((c) => [c.id, c]));
+  const categoryById = new Map(categories.map((c) => [c.id, c]));
   const rows = transactions ?? [];
   const totalPages = Math.max(1, Math.ceil((count ?? 0) / PAGE_SIZE));
 
@@ -218,7 +307,7 @@ export default async function TransactionsPage({
     });
 
   return (
-    <div className="space-y-6">
+    <>
       {showReport && reportGroups.length > 0 && (
         <CategoryMiniReport
           name={reportCategory?.name ?? "Uncategorized"}
@@ -258,27 +347,6 @@ export default async function TransactionsPage({
         </Card>
       ))}
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <TransactionsFilterBar
-          categories={categories ?? []}
-          showScope={!!household}
-          scope={scope}
-          q={q}
-          category={category}
-        />
-        <PeriodToggle
-          period={isAllTime ? null : resolved.mode}
-          anchor={resolved.anchor}
-          customRange={customRange}
-          compareOn={compareOn}
-          compareAnchor={resolved.compareAnchor}
-          compareRange={resolved.compareRange}
-          allowAll
-          allowYear
-          allowCustom
-        />
-      </div>
-
       <Card>
         <CardContent>
           <TransactionList
@@ -295,7 +363,7 @@ export default async function TransactionsPage({
               category_name: t.category_id ? categoryById.get(t.category_id)?.name ?? null : null,
               owner_name: scope === "household" ? nameById.get(t.user_id) ?? null : null,
             }))}
-            editable={{ currentUserId: user.id, accounts: accounts ?? [], categories: categories ?? [] }}
+            editable={{ currentUserId: userId, accounts, categories }}
           />
         </CardContent>
       </Card>
@@ -308,16 +376,16 @@ export default async function TransactionsPage({
           scope: scope === "household" ? "household" : undefined,
           q,
           category,
-          period: params.period,
-          anchor: params.anchor,
-          start: params.start,
-          end: params.end,
-          compare: params.compare,
-          compareAnchor: params.compareAnchor,
-          compareStart: params.compareStart,
-          compareEnd: params.compareEnd,
+          period: rawParams.period,
+          anchor: rawParams.anchor,
+          start: rawParams.start,
+          end: rawParams.end,
+          compare: rawParams.compare,
+          compareAnchor: rawParams.compareAnchor,
+          compareStart: rawParams.compareStart,
+          compareEnd: rawParams.compareEnd,
         }}
       />
-    </div>
+    </>
   );
 }

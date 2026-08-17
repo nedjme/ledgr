@@ -25,7 +25,7 @@ import {
   subYears,
 } from "date-fns";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { dateRangeLabel, type DateRange } from "@/lib/period";
@@ -222,17 +222,20 @@ export function CustomRangePicker({
   const secondMonth = addMonths(viewMonth, 1);
 
   return (
-    <Popover
+    <Sheet
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
         if (next) resetToRange();
       }}
     >
-      <PopoverTrigger className={className} title={title}>
+      <SheetTrigger className={className} title={title}>
         {children ?? (range ? dateRangeLabel(range) : "Pick dates")}
-      </PopoverTrigger>
-      <PopoverContent align="center" className="w-[min(92vw,42rem)] p-0">
+      </SheetTrigger>
+      <SheetContent showCloseButton={false} className="gap-0 p-0 sm:max-w-2xl">
+        <SheetHeader className="sr-only">
+          <SheetTitle>Choose dates</SheetTitle>
+        </SheetHeader>
         <div className="flex items-center justify-end gap-2 border-b border-border p-3">
           <Button variant="outline" onClick={() => setOpen(false)}>
             Cancel
@@ -306,7 +309,7 @@ export function CustomRangePicker({
             ))}
           </div>
         </div>
-      </PopoverContent>
-    </Popover>
+      </SheetContent>
+    </Sheet>
   );
 }

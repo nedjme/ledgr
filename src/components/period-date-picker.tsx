@@ -20,7 +20,7 @@ import {
   subYears,
 } from "date-fns";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { cn } from "@/lib/utils";
 import type { Period } from "@/lib/period";
 
@@ -206,17 +206,20 @@ export function PeriodDatePicker({
   }
 
   return (
-    <Popover
+    <Sheet
       open={open}
       onOpenChange={(next) => {
         setOpen(next);
         if (next) setViewDate(anchor);
       }}
     >
-      <PopoverTrigger className={className} title={title}>
+      <SheetTrigger className={className} title={title}>
         {children}
-      </PopoverTrigger>
-      <PopoverContent align="center" className="w-72 p-3">
+      </SheetTrigger>
+      <SheetContent className="sm:max-w-xs">
+        <SheetHeader>
+          <SheetTitle>Choose a {period}</SheetTitle>
+        </SheetHeader>
         {period === "year" ? (
           <>
             <div className="mb-2 flex items-center justify-between px-1">
@@ -268,7 +271,7 @@ export function PeriodDatePicker({
             Today
           </button>
         </div>
-      </PopoverContent>
-    </Popover>
+      </SheetContent>
+    </Sheet>
   );
 }

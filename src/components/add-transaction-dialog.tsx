@@ -22,6 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { CategoryCombobox } from "@/components/category-combobox";
+import { TransactionDatePicker } from "@/components/transaction-date-picker";
 import { createClient } from "@/lib/supabase/client";
 import type { Account, Category } from "@/lib/supabase/types";
 
@@ -172,10 +173,9 @@ export function AddTransactionDialog({
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label htmlFor="occurred_at">Date</Label>
-                <Input
+                <TransactionDatePicker
                   id="occurred_at"
                   name="occurred_at"
-                  type="date"
                   defaultValue={new Date().toISOString().slice(0, 10)}
                   required
                 />

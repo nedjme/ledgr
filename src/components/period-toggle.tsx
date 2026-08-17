@@ -80,7 +80,7 @@ export function PeriodToggle({
     }
     if (next.anchor === null) params.delete("anchor");
     else if (next.anchor) params.set("anchor", next.anchor);
-    router.push(`${pathname}?${params.toString()}`);
+    router.push(`${pathname}?${params.toString()}`, { scroll: false });
   }
 
   const isBoundedPeriod = period !== null && period !== "custom";
@@ -135,7 +135,7 @@ export function PeriodToggle({
             params.delete("anchor");
             params.set("start", range.start);
             params.set("end", range.end);
-            router.push(`${pathname}?${params.toString()}`);
+            router.push(`${pathname}?${params.toString()}`, { scroll: false });
           }}
           title="Choose a date range"
           className="order-2 min-w-40 rounded-lg px-2 py-1 text-center text-sm font-medium transition-colors hover:bg-muted sm:order-1"
