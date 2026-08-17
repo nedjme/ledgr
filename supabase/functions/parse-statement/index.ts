@@ -192,17 +192,33 @@ Deno.serve(async (req) => {
       })
       .filter((t) => t.occurred_at && t.amount !== 0);
 
-    const { data: categories } = await supabase
-      .from("categories")
-      .select("id, name")
-      .or(householdId ? `household_id.eq.${householdId}` : "household_id.is.null");
+    const [{ data: categories }, { data: aliases }] = await Promise.all([
+      supabase
+        .from("categories")
+        .select("id, name")
+        .or(householdId ? `household_id.eq.${householdId}` : "household_id.is.null"),
+      supabase
+        .from("category_aliases")
+        .select("alias_name, category_id")
+        .or(householdId ? `household_id.eq.${householdId}` : "household_id.is.null"),
+    ]);
     const categoryIdByName = new Map((categories ?? []).map((c) => [c.name, c.id]));
+    // Case-insensitive: a merge remembers the exact source name, but a bank
+    // export's casing can drift between statements (e.g. "Supermarche" vs
+    // "SUPERMARCHE") without it being a meaningfully different label.
+    const categoryIdByAlias = new Map(
+      (aliases ?? []).map((a) => [a.alias_name.toLowerCase(), a.category_id]),
+    );
 
     // Resolve a category name to an id, creating it (and caching it for the
     // rest of this import) the first time it's seen -- either from the
-    // statement's own category column or from our keyword guess.
+    // statement's own category column or from our keyword guess. A name
+    // that was previously merged into another category (category_aliases)
+    // resolves straight to that target instead of recreating the duplicate.
     async function resolveCategoryId(name: string | null): Promise<string | null> {
       if (!name) return null;
+      const aliased = categoryIdByAlias.get(name.toLowerCase());
+      if (aliased) return aliased;
       const existing = categoryIdByName.get(name);
       if (existing) return existing;
 

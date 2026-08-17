@@ -1,10 +1,11 @@
 "use client";
 
-import { Pipette, Trash2 } from "lucide-react";
+import { Merge, Pipette, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   DropdownMenu,
@@ -12,6 +13,8 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import { CategoryCombobox } from "@/components/category-combobox";
 import { createClient } from "@/lib/supabase/client";
 import { CATEGORY_PRESET_HEX, OTHER_COLOR, categoryColor } from "@/lib/category-color";
 import { CATEGORY_ICONS, categoryIconComponent } from "@/lib/category-icons";
@@ -123,15 +126,19 @@ function IconColorPicker({
 
 function CategoryItem({
   category,
+  hasOtherCategories,
   onRename,
   onIconChange,
   onColorChange,
+  onMergeClick,
   onDelete,
 }: {
   category: CategoryRow;
+  hasOtherCategories: boolean;
   onRename: (id: string, name: string) => void;
   onIconChange: (id: string, icon: string) => void;
   onColorChange: (id: string, color: string | null) => void;
+  onMergeClick: (category: CategoryRow) => void;
   onDelete: (id: string) => void;
 }) {
   const [name, setName] = useState(category.name);
@@ -160,6 +167,17 @@ function CategoryItem({
         }}
         className="h-9 flex-1 border-transparent bg-transparent shadow-none focus-visible:border-input focus-visible:bg-background"
       />
+      {hasOtherCategories && (
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          title="Merge into another category"
+          className="shrink-0 text-muted-foreground hover:text-foreground"
+          onClick={() => onMergeClick(category)}
+        >
+          <Merge className="size-4" />
+        </Button>
+      )}
       <Button
         variant="ghost"
         size="icon-sm"
@@ -170,6 +188,69 @@ function CategoryItem({
         <Trash2 className="size-4" />
       </Button>
     </div>
+  );
+}
+
+function MergeCategoryDialog({
+  category,
+  otherCategories,
+  onOpenChange,
+  onConfirm,
+}: {
+  category: CategoryRow | null;
+  otherCategories: CategoryRow[];
+  onOpenChange: (open: boolean) => void;
+  onConfirm: (source: CategoryRow, target: CategoryRow) => Promise<void>;
+}) {
+  const [targetId, setTargetId] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const target = otherCategories.find((c) => c.id === targetId) ?? null;
+
+  async function handleConfirm() {
+    if (!category || !target) return;
+    setBusy(true);
+    await onConfirm(category, target);
+    setBusy(false);
+    setTargetId(null);
+  }
+
+  return (
+    <Sheet
+      open={category !== null}
+      onOpenChange={(next) => {
+        if (!next) setTargetId(null);
+        onOpenChange(next);
+      }}
+    >
+      <SheetContent>
+        <SheetHeader>
+          <SheetTitle>Merge &ldquo;{category?.name}&rdquo;</SheetTitle>
+        </SheetHeader>
+        <div className="flex flex-1 flex-col gap-4">
+          <p className="text-sm text-muted-foreground">
+            Choose a category to merge &ldquo;{category?.name}&rdquo; into. Your
+            transactions move to the selected category, &ldquo;{category?.name}&rdquo;
+            is removed, and future imports labeled &ldquo;{category?.name}&rdquo; will
+            map there automatically.
+          </p>
+          <div className="space-y-1.5">
+            <Label htmlFor="merge_target">Merge into</Label>
+            <CategoryCombobox
+              id="merge_target"
+              categories={otherCategories}
+              categoryId={targetId}
+              onCategoryIdChange={setTargetId}
+              placeholder="Search categories..."
+            />
+          </div>
+          <SheetFooter>
+            <Button disabled={!target || busy} onClick={handleConfirm}>
+              {busy ? "Merging..." : "Merge"}
+            </Button>
+          </SheetFooter>
+        </div>
+      </SheetContent>
+    </Sheet>
   );
 }
 
@@ -186,6 +267,7 @@ export function CategoryManager({
   const [icon, setIcon] = useState("");
   const [color, setColor] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [mergingCategory, setMergingCategory] = useState<CategoryRow | null>(null);
 
   async function addCategory(e: React.FormEvent) {
     e.preventDefault();
@@ -227,6 +309,19 @@ export function CategoryManager({
     router.refresh();
   }
 
+  async function mergeCategory(source: CategoryRow, target: CategoryRow) {
+    const { error } = await supabase.rpc("merge_category", {
+      p_source_id: source.id,
+      p_target_id: target.id,
+    });
+    if (error) {
+      alert(error.message);
+      return;
+    }
+    setMergingCategory(null);
+    router.refresh();
+  }
+
   return (
     <Card>
       <CardHeader>
@@ -263,15 +358,26 @@ export function CategoryManager({
               <CategoryItem
                 key={category.id}
                 category={category}
+                hasOtherCategories={categories.length > 1}
                 onRename={renameCategory}
                 onIconChange={changeIcon}
                 onColorChange={changeColor}
+                onMergeClick={setMergingCategory}
                 onDelete={removeCategory}
               />
             ))}
           </div>
         )}
       </CardContent>
+
+      <MergeCategoryDialog
+        category={mergingCategory}
+        otherCategories={categories.filter((c) => c.id !== mergingCategory?.id)}
+        onOpenChange={(open) => {
+          if (!open) setMergingCategory(null);
+        }}
+        onConfirm={mergeCategory}
+      />
     </Card>
   );
 }

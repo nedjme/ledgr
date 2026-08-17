@@ -19,6 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { CategoryCombobox } from "@/components/category-combobox";
 import { createClient } from "@/lib/supabase/client";
 
 type EditableTransaction = {
@@ -98,7 +99,6 @@ export function EditTransactionDialog({
   }
 
   const accountItems = Object.fromEntries(accounts.map((a) => [a.id, a.name]));
-  const categoryItems = Object.fromEntries(categories.map((c) => [c.id, c.name]));
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -161,22 +161,12 @@ export function EditTransactionDialog({
 
           <div className="space-y-1.5">
             <Label htmlFor="edit_category_id">Category</Label>
-            <Select
+            <CategoryCombobox
+              id="edit_category_id"
               name="category_id"
-              defaultValue={transaction.category_id ?? undefined}
-              items={categoryItems}
-            >
-              <SelectTrigger id="edit_category_id" className="w-full">
-                <SelectValue placeholder="Uncategorized" />
-              </SelectTrigger>
-              <SelectContent>
-                {categories.map((category) => (
-                  <SelectItem key={category.id} value={category.id}>
-                    {category.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              categories={categories}
+              defaultCategoryId={transaction.category_id}
+            />
           </div>
 
           <div className="grid grid-cols-2 gap-3">

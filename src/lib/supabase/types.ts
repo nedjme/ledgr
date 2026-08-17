@@ -176,6 +176,30 @@ export type Database = {
         };
         Relationships: [];
       };
+      category_aliases: {
+        Row: {
+          id: string;
+          household_id: string | null;
+          alias_name: string;
+          category_id: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          household_id?: string | null;
+          alias_name: string;
+          category_id: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          household_id?: string | null;
+          alias_name?: string;
+          category_id?: string;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
@@ -186,6 +210,10 @@ export type Database = {
       accept_invite: {
         Args: { invite_token: string };
         Returns: string;
+      };
+      merge_category: {
+        Args: { p_source_id: string; p_target_id: string };
+        Returns: undefined;
       };
     };
     Enums: Record<string, never>;

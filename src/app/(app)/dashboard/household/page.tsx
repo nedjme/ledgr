@@ -70,8 +70,9 @@ export default async function HouseholdDashboardPage({
     ]);
 
   const memberIds = (members ?? []).map((m) => m.user_id);
+  const otherMemberIds = memberIds.filter((id) => id !== user.id);
 
-  const [{ data: profiles }, { data: memberAccounts }, { data: allTransactions }] =
+  const [{ data: profiles }, { data: memberAccounts }, { data: ownTransactions }, { data: sharedTransactions }] =
     memberIds.length
       ? await Promise.all([
           supabase.from("profiles").select("id, display_name").in("id", memberIds),
@@ -80,16 +81,29 @@ export default async function HouseholdDashboardPage({
             .select("id, user_id, currency, starting_balance")
             .in("user_id", memberIds),
           // Unscoped by period -- current balance is a snapshot as of now.
-          // Only household-shared transactions are visible here (same
-          // boundary as everywhere else in this view), so this reflects
-          // balance built from shared history, not necessarily every
-          // transaction that ever touched the account.
+          // The current user's own balance uses every transaction they've
+          // ever logged (same query the personal dashboard uses), not just
+          // the ones tagged household_id -- a transaction recorded before a
+          // household existed (e.g. an import done pre-signup) never gets
+          // retroactively tagged, so scoping this to household_id alone
+          // undercounts your own balance.
           supabase
             .from("transactions")
             .select("account_id, user_id, amount, currency")
-            .eq("household_id", household.id),
+            .eq("user_id", user.id),
+          // A partner's balance, in contrast, can only be built from what
+          // they've explicitly shared with the household -- RLS hides the
+          // rest of their transactions, so this may undercount if they have
+          // unshared history of their own.
+          otherMemberIds.length
+            ? supabase
+                .from("transactions")
+                .select("account_id, user_id, amount, currency")
+                .eq("household_id", household.id)
+                .in("user_id", otherMemberIds)
+            : Promise.resolve({ data: [] as { account_id: string; user_id: string; amount: number; currency: string }[] }),
         ])
-      : [{ data: [] }, { data: [] }, { data: [] }];
+      : [{ data: [] }, { data: [] }, { data: [] }, { data: [] }];
 
   const nameById = new Map((profiles ?? []).map((p) => [p.id, p.display_name || "Partner"]));
   const categoryById = new Map((categories ?? []).map((c) => [c.id, c]));
@@ -98,7 +112,8 @@ export default async function HouseholdDashboardPage({
 
   const periodParams = `period=${period}&anchor=${anchorParam(anchor)}`;
 
-  const balances = accountBalances(memberAccounts ?? [], allTransactions ?? []);
+  const allTransactions = [...(ownTransactions ?? []), ...(sharedTransactions ?? [])];
+  const balances = accountBalances(memberAccounts ?? [], allTransactions);
   const balanceTotals = [...sumByCurrency(balances)].map(([currency, amount]) => ({
     currency,
     amount,

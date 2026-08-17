@@ -21,6 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { CategoryCombobox } from "@/components/category-combobox";
 import { createClient } from "@/lib/supabase/client";
 import type { Account, Category } from "@/lib/supabase/types";
 
@@ -79,7 +80,6 @@ export function AddTransactionDialog({
   }
 
   const accountItems = Object.fromEntries(accounts.map((a) => [a.id, a.name]));
-  const categoryItems = Object.fromEntries(categories.map((c) => [c.id, c.name]));
 
   if (accounts.length === 0) {
     return (
@@ -166,18 +166,7 @@ export function AddTransactionDialog({
 
             <div className="space-y-1.5">
               <Label htmlFor="category_id">Category</Label>
-              <Select name="category_id" items={categoryItems}>
-                <SelectTrigger id="category_id" className="w-full">
-                  <SelectValue placeholder="Uncategorized" />
-                </SelectTrigger>
-                <SelectContent>
-                  {categories.map((category) => (
-                    <SelectItem key={category.id} value={category.id}>
-                      {category.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <CategoryCombobox id="category_id" name="category_id" categories={categories} />
             </div>
 
             <div className="grid grid-cols-2 gap-3">
