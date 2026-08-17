@@ -14,6 +14,7 @@ import { AddTransactionDialog } from "@/components/add-transaction-dialog";
 import { TransactionList } from "@/components/transaction-list";
 import { CategorySpendCard } from "@/components/category-spend-card";
 import { toBreakdown, type BreakdownDatum } from "@/lib/breakdown";
+import { topCategoryId } from "@/lib/category-hierarchy";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
@@ -39,7 +40,7 @@ export default async function DashboardPage({
         .eq("user_id", user.id),
       supabase
         .from("categories")
-        .select("id, name, icon, color")
+        .select("id, name, icon, color, parent_id")
         .or(household ? `household_id.eq.${household.id}` : "household_id.is.null"),
       supabase
         .from("transactions")
@@ -97,8 +98,12 @@ export default async function DashboardPage({
           const byCategory = new Map<string, BreakdownDatum>();
           for (const t of currencyRows) {
             if (t.amount >= 0) continue;
-            const category = t.category_id ? categoryById.get(t.category_id) : null;
-            const id = t.category_id ?? "uncategorized";
+            // A subcategory's spend rolls up into its parent everywhere
+            // except the parent's own drill-down -- charts here always
+            // group by the top-level category.
+            const rawCategory = t.category_id ? categoryById.get(t.category_id) : null;
+            const id = topCategoryId(rawCategory, categoryById) ?? "uncategorized";
+            const category = id !== "uncategorized" ? categoryById.get(id) : null;
             const existing = byCategory.get(id);
             byCategory.set(id, {
               id,

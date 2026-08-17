@@ -13,6 +13,7 @@ import { TransactionList } from "@/components/transaction-list";
 import { BreakdownChart } from "@/components/charts/breakdown-chart";
 import { CategorySpendCard } from "@/components/category-spend-card";
 import { toBreakdown, type BreakdownDatum } from "@/lib/breakdown";
+import { topCategoryId } from "@/lib/category-hierarchy";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
@@ -54,7 +55,7 @@ export default async function HouseholdDashboardPage({
     await Promise.all([
       supabase
         .from("categories")
-        .select("id, name, icon, color")
+        .select("id, name, icon, color, parent_id")
         .eq("household_id", household.id),
       supabase
         .from("transactions")
@@ -168,8 +169,9 @@ export default async function HouseholdDashboardPage({
           const byPerson = new Map<string, BreakdownDatum>();
           for (const t of currencyRows) {
             if (t.amount >= 0) continue;
-            const category = t.category_id ? categoryById.get(t.category_id) : null;
-            const catId = t.category_id ?? "uncategorized";
+            const rawCategory = t.category_id ? categoryById.get(t.category_id) : null;
+            const catId = topCategoryId(rawCategory, categoryById) ?? "uncategorized";
+            const category = catId !== "uncategorized" ? categoryById.get(catId) : null;
             const existingCat = byCategory.get(catId);
             byCategory.set(catId, {
               id: catId,

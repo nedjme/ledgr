@@ -4,8 +4,10 @@ import { parsePeriod, parseAnchor, periodRange, shiftAnchor } from "@/lib/period
 import { TransactionsFilterBar } from "@/components/transactions-filter-bar";
 import { TransactionList } from "@/components/transaction-list";
 import { CategoryMiniReport } from "@/components/category-mini-report";
+import { BreakdownChart } from "@/components/charts/breakdown-chart";
 import { Pagination } from "@/components/pagination";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import type { BreakdownDatum } from "@/lib/breakdown";
 
 const PAGE_SIZE = 30;
 
@@ -38,6 +40,21 @@ export default async function TransactionsPage({
 
   const supabase = await createClient();
 
+  // Fetched ahead of the rest -- the transaction/report queries below need
+  // to know a clicked category's subcategory ids (if any) to widen their
+  // filter from "this exact category" to "this category or its children",
+  // so a subcategory's spend still counts toward its parent's drill-down.
+  const { data: categories } = await supabase
+    .from("categories")
+    .select("id, name, icon, color, parent_id")
+    .or(household ? `household_id.eq.${household.id}` : "household_id.is.null")
+    .order("name");
+
+  const childCategoryIds = (categories ?? [])
+    .filter((c) => c.parent_id === category)
+    .map((c) => c.id);
+  const categoryFilterIds = childCategoryIds.length > 0 ? [category, ...childCategoryIds] : null;
+
   // Query construction is synchronous (no network call happens until it's
   // awaited below), so these can all join the same Promise.all -- none
   // need each other's results. Filters are duplicated per query rather
@@ -55,17 +72,25 @@ export default async function TransactionsPage({
       : transactionsQuery.eq("user_id", user.id);
   if (q) transactionsQuery = transactionsQuery.ilike("description", `%${q}%`);
   if (category === "uncategorized") transactionsQuery = transactionsQuery.is("category_id", null);
-  else if (category) transactionsQuery = transactionsQuery.eq("category_id", category);
+  else if (category) {
+    transactionsQuery = categoryFilterIds
+      ? transactionsQuery.in("category_id", categoryFilterIds)
+      : transactionsQuery.eq("category_id", category);
+  }
   if (range) transactionsQuery = transactionsQuery.gte("occurred_at", range.start).lte("occurred_at", range.end);
 
-  let reportQuery = supabase.from("transactions").select("amount, currency");
+  let reportQuery = supabase.from("transactions").select("amount, currency, category_id");
   reportQuery =
     scope === "household"
       ? reportQuery.eq("household_id", household!.id)
       : reportQuery.eq("user_id", user.id);
   if (q) reportQuery = reportQuery.ilike("description", `%${q}%`);
   if (category === "uncategorized") reportQuery = reportQuery.is("category_id", null);
-  else if (category) reportQuery = reportQuery.eq("category_id", category);
+  else if (category) {
+    reportQuery = categoryFilterIds
+      ? reportQuery.in("category_id", categoryFilterIds)
+      : reportQuery.eq("category_id", category);
+  }
   if (range) reportQuery = reportQuery.gte("occurred_at", range.start).lte("occurred_at", range.end);
 
   const prevRange = range ? periodRange(period, shiftAnchor(period, anchor, -1)) : null;
@@ -75,7 +100,11 @@ export default async function TransactionsPage({
       ? previousReportQuery.eq("household_id", household!.id)
       : previousReportQuery.eq("user_id", user.id);
   if (category === "uncategorized") previousReportQuery = previousReportQuery.is("category_id", null);
-  else if (category) previousReportQuery = previousReportQuery.eq("category_id", category);
+  else if (category) {
+    previousReportQuery = categoryFilterIds
+      ? previousReportQuery.in("category_id", categoryFilterIds)
+      : previousReportQuery.eq("category_id", category);
+  }
   if (prevRange) {
     previousReportQuery = previousReportQuery
       .gte("occurred_at", prevRange.start)
@@ -85,24 +114,22 @@ export default async function TransactionsPage({
   const from = (page - 1) * PAGE_SIZE;
 
   const [
-    { data: categories },
     { data: accounts },
     { data: transactions, count },
     membersResult,
     reportRows,
     previousReportRows,
   ] = await Promise.all([
-    supabase
-      .from("categories")
-      .select("id, name, icon, color")
-      .or(household ? `household_id.eq.${household.id}` : "household_id.is.null")
-      .order("name"),
     supabase.from("accounts").select("id, name, currency").eq("user_id", user.id),
     transactionsQuery.order("occurred_at", { ascending: false }).range(from, from + PAGE_SIZE - 1),
     scope === "household"
       ? supabase.from("household_members").select("user_id").eq("household_id", household!.id)
       : Promise.resolve({ data: null as { user_id: string }[] | null }),
-    showReport ? reportQuery : Promise.resolve({ data: null as { amount: number; currency: string }[] | null }),
+    showReport
+      ? reportQuery
+      : Promise.resolve({
+          data: null as { amount: number; currency: string; category_id: string | null }[] | null,
+        }),
     showReport && prevRange
       ? previousReportQuery
       : Promise.resolve({ data: null as { amount: number; currency: string }[] | null }),
@@ -130,12 +157,30 @@ export default async function TransactionsPage({
   // household members' accounts), so the report groups by currency instead
   // of summing everything into one number that would mix MAD and EUR.
   const byCurrency = new Map<string, { total: number; count: number }>();
+  // Per-currency breakdown of the parent's own direct spend vs. each of its
+  // subcategories -- only populated when the clicked category has children.
+  const subcategoryByCurrency = new Map<string, Map<string, BreakdownDatum>>();
   for (const t of reportRows.data ?? []) {
     if (t.amount >= 0) continue;
     const entry = byCurrency.get(t.currency) ?? { total: 0, count: 0 };
     entry.total += Math.abs(t.amount);
     entry.count += 1;
     byCurrency.set(t.currency, entry);
+
+    if (childCategoryIds.length > 0) {
+      const bucketId = t.category_id ?? category;
+      const bucketCategory = t.category_id ? categoryById.get(t.category_id) : reportCategory;
+      const subMap = subcategoryByCurrency.get(t.currency) ?? new Map<string, BreakdownDatum>();
+      const existing = subMap.get(bucketId);
+      subMap.set(bucketId, {
+        id: bucketId,
+        name: bucketCategory?.name ?? "Uncategorized",
+        icon: bucketCategory?.icon ?? null,
+        color: bucketCategory?.color ?? null,
+        value: (existing?.value ?? 0) + Math.abs(t.amount),
+      });
+      subcategoryByCurrency.set(t.currency, subMap);
+    }
   }
 
   const previousTotalByCurrency = new Map<string, number>();
@@ -167,6 +212,19 @@ export default async function TransactionsPage({
           groups={reportGroups}
         />
       )}
+
+      {[...subcategoryByCurrency.entries()].map(([currency, subMap]) => (
+        <Card key={currency}>
+          <CardHeader>
+            <CardTitle>
+              By subcategory{subcategoryByCurrency.size > 1 ? ` · ${currency}` : ""}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <BreakdownChart data={[...subMap.values()]} currency={currency} />
+          </CardContent>
+        </Card>
+      ))}
 
       <TransactionsFilterBar
         categories={categories ?? []}

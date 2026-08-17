@@ -1,6 +1,6 @@
 "use client";
 
-import { Merge, Pipette, Trash2 } from "lucide-react";
+import { CornerDownRight, CornerUpLeft, Pipette, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -21,7 +21,7 @@ import { CATEGORY_ICONS, categoryIconComponent } from "@/lib/category-icons";
 import { cn } from "@/lib/utils";
 import type { Category } from "@/lib/supabase/types";
 
-type CategoryRow = Pick<Category, "id" | "name" | "icon" | "color">;
+type CategoryRow = Pick<Category, "id" | "name" | "icon" | "color" | "parent_id">;
 
 // The avatar circle doubles as the picker trigger: it always shows the
 // category's actual resolved color and icon (SVGs tint to `currentColor`,
@@ -126,25 +126,34 @@ function IconColorPicker({
 
 function CategoryItem({
   category,
-  hasOtherCategories,
+  indented,
+  canNest,
   onRename,
   onIconChange,
   onColorChange,
-  onMergeClick,
+  onNestClick,
+  onRemoveFromParent,
   onDelete,
 }: {
   category: CategoryRow;
-  hasOtherCategories: boolean;
+  indented: boolean;
+  canNest: boolean;
   onRename: (id: string, name: string) => void;
   onIconChange: (id: string, icon: string) => void;
   onColorChange: (id: string, color: string | null) => void;
-  onMergeClick: (category: CategoryRow) => void;
+  onNestClick: (category: CategoryRow) => void;
+  onRemoveFromParent: (id: string) => void;
   onDelete: (id: string) => void;
 }) {
   const [name, setName] = useState(category.name);
 
   return (
-    <div className="flex items-center gap-3 rounded-xl px-2 py-1.5 hover:bg-muted/60">
+    <div
+      className={cn(
+        "flex items-center gap-3 rounded-xl px-2 py-1.5 hover:bg-muted/60",
+        indented && "ml-8",
+      )}
+    >
       <IconColorPicker
         icon={category.icon ?? ""}
         fallbackLetter={category.name.slice(0, 1).toUpperCase()}
@@ -167,15 +176,26 @@ function CategoryItem({
         }}
         className="h-9 flex-1 border-transparent bg-transparent shadow-none focus-visible:border-input focus-visible:bg-background"
       />
-      {hasOtherCategories && (
+      {category.parent_id !== null && (
         <Button
           variant="ghost"
           size="icon-sm"
-          title="Merge into another category"
+          title="Remove from parent category"
           className="shrink-0 text-muted-foreground hover:text-foreground"
-          onClick={() => onMergeClick(category)}
+          onClick={() => onRemoveFromParent(category.id)}
         >
-          <Merge className="size-4" />
+          <CornerUpLeft className="size-4" />
+        </Button>
+      )}
+      {canNest && (
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          title="Make a subcategory of..."
+          className="shrink-0 text-muted-foreground hover:text-foreground"
+          onClick={() => onNestClick(category)}
+        >
+          <CornerDownRight className="size-4" />
         </Button>
       )}
       <Button
@@ -191,20 +211,20 @@ function CategoryItem({
   );
 }
 
-function MergeCategoryDialog({
+function NestCategoryDialog({
   category,
-  otherCategories,
+  targets,
   onOpenChange,
   onConfirm,
 }: {
   category: CategoryRow | null;
-  otherCategories: CategoryRow[];
+  targets: CategoryRow[];
   onOpenChange: (open: boolean) => void;
   onConfirm: (source: CategoryRow, target: CategoryRow) => Promise<void>;
 }) {
   const [targetId, setTargetId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const target = otherCategories.find((c) => c.id === targetId) ?? null;
+  const target = targets.find((c) => c.id === targetId) ?? null;
 
   async function handleConfirm() {
     if (!category || !target) return;
@@ -224,20 +244,20 @@ function MergeCategoryDialog({
     >
       <SheetContent>
         <SheetHeader>
-          <SheetTitle>Merge &ldquo;{category?.name}&rdquo;</SheetTitle>
+          <SheetTitle>Make &ldquo;{category?.name}&rdquo; a subcategory</SheetTitle>
         </SheetHeader>
         <div className="flex flex-1 flex-col gap-4">
           <p className="text-sm text-muted-foreground">
-            Choose a category to merge &ldquo;{category?.name}&rdquo; into. Your
-            transactions move to the selected category, &ldquo;{category?.name}&rdquo;
-            is removed, and future imports labeled &ldquo;{category?.name}&rdquo; will
-            map there automatically.
+            Choose a category for &ldquo;{category?.name}&rdquo; to nest under. Its
+            spend rolls up into that category&apos;s totals everywhere, and shows
+            its own breakdown when you drill into it -- nothing is deleted or
+            renamed, and you can remove it from the parent again later.
           </p>
           <div className="space-y-1.5">
-            <Label htmlFor="merge_target">Merge into</Label>
+            <Label htmlFor="nest_target">Parent category</Label>
             <CategoryCombobox
-              id="merge_target"
-              categories={otherCategories}
+              id="nest_target"
+              categories={targets}
               categoryId={targetId}
               onCategoryIdChange={setTargetId}
               placeholder="Search categories..."
@@ -245,7 +265,7 @@ function MergeCategoryDialog({
           </div>
           <SheetFooter>
             <Button disabled={!target || busy} onClick={handleConfirm}>
-              {busy ? "Merging..." : "Merge"}
+              {busy ? "Saving..." : "Make subcategory"}
             </Button>
           </SheetFooter>
         </div>
@@ -267,7 +287,7 @@ export function CategoryManager({
   const [icon, setIcon] = useState("");
   const [color, setColor] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [mergingCategory, setMergingCategory] = useState<CategoryRow | null>(null);
+  const [nestingCategory, setNestingCategory] = useState<CategoryRow | null>(null);
 
   async function addCategory(e: React.FormEvent) {
     e.preventDefault();
@@ -309,17 +329,29 @@ export function CategoryManager({
     router.refresh();
   }
 
-  async function mergeCategory(source: CategoryRow, target: CategoryRow) {
-    const { error } = await supabase.rpc("merge_category", {
-      p_source_id: source.id,
-      p_target_id: target.id,
-    });
+  async function nestCategory(source: CategoryRow, target: CategoryRow) {
+    const { error } = await supabase
+      .from("categories")
+      .update({ parent_id: target.id })
+      .eq("id", source.id);
     if (error) {
       alert(error.message);
       return;
     }
-    setMergingCategory(null);
+    setNestingCategory(null);
     router.refresh();
+  }
+
+  async function removeFromParent(id: string) {
+    await supabase.from("categories").update({ parent_id: null }).eq("id", id);
+    router.refresh();
+  }
+
+  const topLevel = categories.filter((c) => c.parent_id === null);
+  const childrenByParent = new Map<string, CategoryRow[]>();
+  for (const c of categories) {
+    if (!c.parent_id) continue;
+    childrenByParent.set(c.parent_id, [...(childrenByParent.get(c.parent_id) ?? []), c]);
   }
 
   return (
@@ -354,29 +386,49 @@ export function CategoryManager({
           </p>
         ) : (
           <div className="space-y-0.5">
-            {categories.map((category) => (
-              <CategoryItem
-                key={category.id}
-                category={category}
-                hasOtherCategories={categories.length > 1}
-                onRename={renameCategory}
-                onIconChange={changeIcon}
-                onColorChange={changeColor}
-                onMergeClick={setMergingCategory}
-                onDelete={removeCategory}
-              />
-            ))}
+            {topLevel.map((category) => {
+              const children = childrenByParent.get(category.id) ?? [];
+              return (
+                <div key={category.id}>
+                  <CategoryItem
+                    category={category}
+                    indented={false}
+                    canNest={children.length === 0 && topLevel.length > 1}
+                    onRename={renameCategory}
+                    onIconChange={changeIcon}
+                    onColorChange={changeColor}
+                    onNestClick={setNestingCategory}
+                    onRemoveFromParent={removeFromParent}
+                    onDelete={removeCategory}
+                  />
+                  {children.map((child) => (
+                    <CategoryItem
+                      key={child.id}
+                      category={child}
+                      indented
+                      canNest={topLevel.length > 1}
+                      onRename={renameCategory}
+                      onIconChange={changeIcon}
+                      onColorChange={changeColor}
+                      onNestClick={setNestingCategory}
+                      onRemoveFromParent={removeFromParent}
+                      onDelete={removeCategory}
+                    />
+                  ))}
+                </div>
+              );
+            })}
           </div>
         )}
       </CardContent>
 
-      <MergeCategoryDialog
-        category={mergingCategory}
-        otherCategories={categories.filter((c) => c.id !== mergingCategory?.id)}
+      <NestCategoryDialog
+        category={nestingCategory}
+        targets={topLevel.filter((c) => c.id !== nestingCategory?.id)}
         onOpenChange={(open) => {
-          if (!open) setMergingCategory(null);
+          if (!open) setNestingCategory(null);
         }}
-        onConfirm={mergeCategory}
+        onConfirm={nestCategory}
       />
     </Card>
   );

@@ -43,7 +43,7 @@ export default async function HouseholdSettingsPage() {
       : Promise.resolve({ data: null as { id: string; token: string } | null }),
     supabase
       .from("categories")
-      .select("id, name, icon, color")
+      .select("id, name, icon, color, parent_id")
       .or(household ? `household_id.eq.${household.id}` : "household_id.is.null")
       .order("name"),
   ]);
