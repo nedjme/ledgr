@@ -159,12 +159,28 @@ export function PeriodToggle({
         }}
         className="order-1 sm:order-3"
       >
-        <TabsList>
-          {allowAll && <TabsTrigger value="all">All time</TabsTrigger>}
-          <TabsTrigger value="week">Week</TabsTrigger>
-          <TabsTrigger value="month">Month</TabsTrigger>
-          {allowYear && <TabsTrigger value="year">Year</TabsTrigger>}
-          {allowCustom && <TabsTrigger value="custom">Custom</TabsTrigger>}
+        <TabsList className="h-9 p-1 group-data-horizontal/tabs:h-9">
+          {allowAll && (
+            <TabsTrigger value="all" className="px-3 py-1.5">
+              All time
+            </TabsTrigger>
+          )}
+          <TabsTrigger value="week" className="px-3 py-1.5">
+            Week
+          </TabsTrigger>
+          <TabsTrigger value="month" className="px-3 py-1.5">
+            Month
+          </TabsTrigger>
+          {allowYear && (
+            <TabsTrigger value="year" className="px-3 py-1.5">
+              Year
+            </TabsTrigger>
+          )}
+          {allowCustom && (
+            <TabsTrigger value="custom" className="px-3 py-1.5">
+              Custom
+            </TabsTrigger>
+          )}
         </TabsList>
       </Tabs>
     </div>

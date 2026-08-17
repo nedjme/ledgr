@@ -233,6 +233,15 @@ export function CustomRangePicker({
         {children ?? (range ? dateRangeLabel(range) : "Pick dates")}
       </PopoverTrigger>
       <PopoverContent align="center" className="w-[min(92vw,42rem)] p-0">
+        <div className="flex items-center justify-end gap-2 border-b border-border p-3">
+          <Button variant="outline" onClick={() => setOpen(false)}>
+            Cancel
+          </Button>
+          <Button disabled={!pendingStart} onClick={apply}>
+            Select
+          </Button>
+        </div>
+
         <div className="flex flex-col sm:flex-row">
           <div className="min-w-0 flex-1 p-3">
             <div className="mb-1 flex items-center justify-between px-1">
@@ -296,15 +305,6 @@ export function CustomRangePicker({
               </div>
             ))}
           </div>
-        </div>
-
-        <div className="flex items-center justify-end gap-2 border-t border-border p-3">
-          <Button variant="outline" size="sm" onClick={() => setOpen(false)}>
-            Cancel
-          </Button>
-          <Button size="sm" disabled={!pendingStart} onClick={apply}>
-            Select
-          </Button>
         </div>
       </PopoverContent>
     </Popover>
