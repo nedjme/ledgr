@@ -1,12 +1,12 @@
 "use client";
 
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ArrowLeftRight, ChevronLeft, ChevronRight } from "lucide-react";
 import { PeriodDatePicker } from "@/components/period-date-picker";
 import { CustomRangePicker } from "@/components/custom-range-picker";
 import { PERIOD_LABEL_MIN_WIDTH_SM } from "@/components/period-toggle";
 import { cn } from "@/lib/utils";
-import { anchorParam, periodLabel, shiftAnchor, type DateRange, type Period } from "@/lib/period";
+import { useOptimisticParams } from "@/lib/use-optimistic-params";
+import { anchorParam, periodLabel, resolvePeriod, shiftAnchor, type DateRange, type Period } from "@/lib/period";
 
 // The comparison period is always the same *type* as the primary one
 // (week vs. week, month vs. month, custom range vs. custom range) --
@@ -15,30 +15,25 @@ import { anchorParam, periodLabel, shiftAnchor, type DateRange, type Period } fr
 // the same prev/next/jump UI as the primary picker, defaulting to the
 // immediately-preceding one the moment Compare switches on.
 export function CompareToggle({
-  compareOn,
   period,
-  compareAnchor,
-  compareRange,
   className,
 }: {
-  compareOn: boolean;
   period: Period | "custom";
-  compareAnchor: Date;
-  compareRange: DateRange | null;
   className?: string;
 }) {
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-
-  function updateParams(mutate: (params: URLSearchParams) => void) {
-    const params = new URLSearchParams(searchParams);
-    mutate(params);
-    router.push(`${pathname}?${params.toString()}`, { scroll: false });
-  }
+  // Derived from the client-known (optimistic) URL, same as period-toggle.tsx
+  // -- Compare has its own click handlers (toggle, prev/next, jump) that
+  // don't route through the parent, so it needs its own optimistic layer
+  // for its button/label to update the instant it's clicked rather than
+  // waiting on the server round-trip.
+  const { params: rawParams, navigate: navigateParams } = useOptimisticParams();
+  const resolved = resolvePeriod(rawParams);
+  const compareOn = resolved.compareOn;
+  const compareAnchor = resolved.compareAnchor;
+  const compareRange = resolved.compareRange;
 
   function toggle() {
-    updateParams((params) => {
+    navigateParams((params) => {
       if (compareOn) {
         params.delete("compare");
         params.delete("compareAnchor");
@@ -51,11 +46,11 @@ export function CompareToggle({
   }
 
   function navigateCompareAnchor(anchor: Date) {
-    updateParams((params) => params.set("compareAnchor", anchorParam(anchor)));
+    navigateParams((params) => params.set("compareAnchor", anchorParam(anchor)));
   }
 
   function navigateCompareRange(range: DateRange) {
-    updateParams((params) => {
+    navigateParams((params) => {
       params.set("compareStart", range.start);
       params.set("compareEnd", range.end);
     });

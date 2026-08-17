@@ -74,16 +74,7 @@ export default async function DashboardPage({
       <BalanceCard totals={balanceTotals} />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <PeriodToggle
-          period={resolved.mode}
-          anchor={resolved.anchor}
-          customRange={resolved.customRange}
-          compareOn={resolved.compareOn}
-          compareAnchor={resolved.compareAnchor}
-          compareRange={resolved.compareRange}
-          allowYear
-          allowCustom
-        />
+        <PeriodToggle allowYear allowCustom />
         <AddTransactionDialog
           accounts={accounts ?? []}
           categories={categories ?? []}

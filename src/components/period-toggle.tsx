@@ -1,6 +1,5 @@
 "use client";
 
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
@@ -8,7 +7,15 @@ import { PeriodDatePicker } from "@/components/period-date-picker";
 import { CustomRangePicker } from "@/components/custom-range-picker";
 import { CompareToggle } from "@/components/compare-toggle";
 import { cn } from "@/lib/utils";
-import { anchorParam, isCurrentPeriod, periodLabel, shiftAnchor, type DateRange, type Period } from "@/lib/period";
+import { useOptimisticParams } from "@/lib/use-optimistic-params";
+import {
+  anchorParam,
+  isCurrentPeriod,
+  periodLabel,
+  resolvePeriod,
+  shiftAnchor,
+  type Period,
+} from "@/lib/period";
 
 // A single flat min-width sized for "September 2026" turns a short "2026"
 // into an oddly wide, sparse-looking button -- scaled per period type
@@ -40,47 +47,44 @@ export const PERIOD_LABEL_MIN_WIDTH_SM: Record<Period, string> = {
 // bounded period to compare against (i.e. not "All time") -- what it
 // compares to is always the equivalent previous unit, no separate choice.
 export function PeriodToggle({
-  period,
-  anchor,
   allowAll = false,
   allowYear = false,
   allowCustom = false,
-  customRange = null,
-  compareOn = false,
-  compareAnchor,
-  compareRange = null,
 }: {
-  period: Period | "custom" | null;
-  anchor: Date;
   allowAll?: boolean;
   allowYear?: boolean;
   allowCustom?: boolean;
-  customRange?: DateRange | null;
-  compareOn?: boolean;
-  compareAnchor?: Date;
-  compareRange?: DateRange | null;
 }) {
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
+  // Derived straight from the client-known (optimistic) URL rather than
+  // passed down as props from the server-rendered page -- see
+  // use-optimistic-params.ts for why a plain `useSearchParams()` isn't
+  // enough on its own. The page still calls `resolvePeriod` itself for the
+  // data it fetches; this is a second, cheap (pure, no I/O) call purely for
+  // this instant display.
+  const { params: rawParams, navigate: navigateParams } = useOptimisticParams();
+  const isAllTime = allowAll && !rawParams.period;
+  const resolved = resolvePeriod(rawParams);
+  const period = isAllTime ? null : resolved.mode;
+  const anchor = resolved.anchor;
+  const customRange = resolved.customRange;
 
   function navigate(next: { period?: Period | "all" | "custom"; anchor?: string | null }) {
-    const params = new URLSearchParams(searchParams);
-    params.delete("page");
-    if (next.period === "all") {
-      params.delete("period");
-      params.delete("anchor");
-    } else if (next.period === "custom") {
-      params.set("period", "custom");
-      params.delete("anchor");
-    } else if (next.period) {
-      params.set("period", next.period);
-      params.delete("start");
-      params.delete("end");
-    }
-    if (next.anchor === null) params.delete("anchor");
-    else if (next.anchor) params.set("anchor", next.anchor);
-    router.push(`${pathname}?${params.toString()}`, { scroll: false });
+    navigateParams((params) => {
+      params.delete("page");
+      if (next.period === "all") {
+        params.delete("period");
+        params.delete("anchor");
+      } else if (next.period === "custom") {
+        params.set("period", "custom");
+        params.delete("anchor");
+      } else if (next.period) {
+        params.set("period", next.period);
+        params.delete("start");
+        params.delete("end");
+      }
+      if (next.anchor === null) params.delete("anchor");
+      else if (next.anchor) params.set("anchor", next.anchor);
+    });
   }
 
   const isBoundedPeriod = period !== null && period !== "custom";
@@ -129,26 +133,20 @@ export function PeriodToggle({
         <CustomRangePicker
           range={customRange}
           onSelect={(range) => {
-            const params = new URLSearchParams(searchParams);
-            params.delete("page");
-            params.set("period", "custom");
-            params.delete("anchor");
-            params.set("start", range.start);
-            params.set("end", range.end);
-            router.push(`${pathname}?${params.toString()}`, { scroll: false });
+            navigateParams((params) => {
+              params.delete("page");
+              params.set("period", "custom");
+              params.delete("anchor");
+              params.set("start", range.start);
+              params.set("end", range.end);
+            });
           }}
           title="Choose a date range"
           className="order-2 min-w-40 rounded-lg px-2 py-1 text-center text-sm font-medium transition-colors hover:bg-muted sm:order-1"
         />
       )}
       {period !== null && (
-        <CompareToggle
-          compareOn={compareOn}
-          period={period}
-          compareAnchor={compareAnchor ?? new Date()}
-          compareRange={compareRange}
-          className="order-3 sm:order-2"
-        />
+        <CompareToggle period={period} className="order-3 sm:order-2" />
       )}
       <Tabs
         value={period ?? "all"}

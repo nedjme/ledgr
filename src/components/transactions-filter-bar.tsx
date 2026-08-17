@@ -1,40 +1,40 @@
 "use client";
 
 import { useState } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CategoryCombobox } from "@/components/category-combobox";
+import { useOptimisticParams } from "@/lib/use-optimistic-params";
 
 const UNCATEGORIZED = "uncategorized";
 
 export function TransactionsFilterBar({
   categories,
   showScope,
-  scope,
   q,
-  category,
 }: {
   categories: { id: string; name: string }[];
   showScope: boolean;
-  scope: "personal" | "household";
   q: string;
-  category: string;
 }) {
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
   const [search, setSearch] = useState(q);
 
+  // Derived from the client-known (optimistic) URL, not passed down as a
+  // prop -- see use-optimistic-params.ts. Updates the instant a tab or the
+  // category combobox is clicked, before the server round-trip lands.
+  const { params: rawParams, navigate: navigateParams } = useOptimisticParams();
+  const scope = rawParams.scope === "household" ? "household" : "personal";
+  const category = rawParams.category ?? "";
+
   function navigate(next: Record<string, string | null>) {
-    const params = new URLSearchParams(searchParams);
-    for (const [key, value] of Object.entries(next)) {
-      if (value === null || value === "") params.delete(key);
-      else params.set(key, value);
-    }
-    params.delete("page");
-    router.push(`${pathname}?${params.toString()}`, { scroll: false });
+    navigateParams((params) => {
+      for (const [key, value] of Object.entries(next)) {
+        if (value === null || value === "") params.delete(key);
+        else params.set(key, value);
+      }
+      params.delete("page");
+    });
   }
 
   return (

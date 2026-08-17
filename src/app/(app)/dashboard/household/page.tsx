@@ -146,16 +146,7 @@ export default async function HouseholdDashboardPage({
       />
 
       <div className="flex justify-end">
-        <PeriodToggle
-          period={resolved.mode}
-          anchor={resolved.anchor}
-          customRange={resolved.customRange}
-          compareOn={resolved.compareOn}
-          compareAnchor={resolved.compareAnchor}
-          compareRange={resolved.compareRange}
-          allowYear
-          allowCustom
-        />
+        <PeriodToggle allowYear allowCustom />
       </div>
 
       {/* Keyed by the resolved query string so every distinct filter change

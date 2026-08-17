@@ -76,21 +76,9 @@ export default async function TransactionsPage({
         <TransactionsFilterBar
           categories={categories ?? []}
           showScope={!!household}
-          scope={scope}
           q={q}
-          category={category}
         />
-        <PeriodToggle
-          period={isAllTime ? null : resolved.mode}
-          anchor={resolved.anchor}
-          customRange={resolved.customRange}
-          compareOn={!isAllTime && resolved.compareOn}
-          compareAnchor={resolved.compareAnchor}
-          compareRange={resolved.compareRange}
-          allowAll
-          allowYear
-          allowCustom
-        />
+        <PeriodToggle allowAll allowYear allowCustom />
       </div>
 
       {/* Keyed by every filter-affecting param so a search keystroke, a
