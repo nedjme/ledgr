@@ -116,18 +116,21 @@ export type Database = {
           household_id: string | null;
           name: string;
           icon: string | null;
+          color: string | null;
         };
         Insert: {
           id?: string;
           household_id?: string | null;
           name: string;
           icon?: string | null;
+          color?: string | null;
         };
         Update: {
           id?: string;
           household_id?: string | null;
           name?: string;
           icon?: string | null;
+          color?: string | null;
         };
         Relationships: [];
       };

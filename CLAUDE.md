@@ -76,6 +76,15 @@ is Ledgr's UI chrome", chart colors mark "this is a data series" — never
 reuse one for the other, and cap categorical series at 5 (fold extras into
 "Other").
 
+**Category colors are the one deliberate exception.** A category with no
+manual color still falls back to a stable hash into the validated 5-hue
+palette (`src/lib/category-color.ts`), but `categories.color` lets a user
+pick *any* hex via the picker in `category-manager.tsx` (5 palette presets
++ a native `<input type="color">`). This is a conscious tradeoff the user
+opted into — free-form colors aren't guaranteed colorblind-distinguishable
+from each other in the "Spend by category" chart the way the base palette
+is. Don't "fix" this by reverting to a constrained slot without asking.
+
 ## Icons
 
 `lucide-react` only. Stick to the sizes already in use: `size-4` (inline,

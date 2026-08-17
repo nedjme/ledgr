@@ -1,14 +1,26 @@
-export type BreakdownDatum = { name: string; value: number };
+export type BreakdownDatum = {
+  id: string | null;
+  name: string;
+  value: number;
+  icon?: string | null;
+  color?: string | null;
+  /**
+   * Precomputed server-side rather than a hrefFor(row) callback prop --
+   * functions can't cross the server/client component boundary, only
+   * serializable data.
+   */
+  href?: string;
+};
 
-export function toBreakdown(
-  rows: { name: string; value: number }[],
-  maxSlots = 5,
-): BreakdownDatum[] {
+// "Other" (id: null) never counts toward maxSlots as one of the real
+// entries -- capping at 5 means "5 real categories, plus Other if there's
+// more", not "4 categories once Other is added".
+export function toBreakdown(rows: BreakdownDatum[], maxSlots = 5): BreakdownDatum[] {
   const sorted = [...rows].sort((a, b) => b.value - a.value);
   if (sorted.length <= maxSlots) return sorted;
 
-  const head = sorted.slice(0, maxSlots - 1);
-  const other = sorted.slice(maxSlots - 1);
-  const otherTotal = other.reduce((sum, row) => sum + row.value, 0);
-  return [...head, { name: "Other", value: otherTotal }];
+  const head = sorted.slice(0, maxSlots);
+  const rest = sorted.slice(maxSlots);
+  const otherTotal = rest.reduce((sum, row) => sum + row.value, 0);
+  return [...head, { id: null, name: "Other", value: otherTotal }];
 }

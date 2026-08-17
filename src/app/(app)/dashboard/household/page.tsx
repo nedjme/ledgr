@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requireUser, getHousehold } from "@/lib/data";
 import { createClient } from "@/lib/supabase/server";
-import { periodRange, parsePeriod, parseAnchor, periodLabel } from "@/lib/period";
+import { periodRange, parsePeriod, parseAnchor, periodLabel, anchorParam } from "@/lib/period";
 import { formatCurrency } from "@/lib/format";
 import { groupByCurrency } from "@/lib/group-by-currency";
 import { accountBalances, sumByCurrency } from "@/lib/balance";
@@ -11,7 +11,8 @@ import { HeroSummaryCard } from "@/components/hero-summary-card";
 import { BalanceCard } from "@/components/balance-summary";
 import { TransactionList } from "@/components/transaction-list";
 import { BreakdownChart } from "@/components/charts/breakdown-chart";
-import { toBreakdown } from "@/lib/breakdown";
+import { CategorySpendCard } from "@/components/category-spend-card";
+import { toBreakdown, type BreakdownDatum } from "@/lib/breakdown";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
@@ -51,7 +52,10 @@ export default async function HouseholdDashboardPage({
 
   const [{ data: categories }, { data: transactions }, { data: members }, { data: accounts }] =
     await Promise.all([
-      supabase.from("categories").select("id, name").eq("household_id", household.id),
+      supabase
+        .from("categories")
+        .select("id, name, icon, color")
+        .eq("household_id", household.id),
       supabase
         .from("transactions")
         .select(
@@ -88,9 +92,11 @@ export default async function HouseholdDashboardPage({
       : [{ data: [] }, { data: [] }, { data: [] }];
 
   const nameById = new Map((profiles ?? []).map((p) => [p.id, p.display_name || "Partner"]));
-  const categoryById = new Map((categories ?? []).map((c) => [c.id, c.name]));
+  const categoryById = new Map((categories ?? []).map((c) => [c.id, c]));
   const rows = transactions ?? [];
   const byCurrency = groupByCurrency(rows);
+
+  const periodParams = `period=${period}&anchor=${anchorParam(anchor)}`;
 
   const balances = accountBalances(memberAccounts ?? [], allTransactions ?? []);
   const balanceTotals = [...sumByCurrency(balances)].map(([currency, amount]) => ({
@@ -143,25 +149,33 @@ export default async function HouseholdDashboardPage({
             .filter((t) => t.amount > 0)
             .reduce((sum, t) => sum + t.amount, 0);
 
-          const byCategory = new Map<string, number>();
-          const byPerson = new Map<string, number>();
+          const byCategory = new Map<string, BreakdownDatum>();
+          const byPerson = new Map<string, BreakdownDatum>();
           for (const t of currencyRows) {
             if (t.amount >= 0) continue;
-            const catName =
-              (t.category_id && categoryById.get(t.category_id)) || "Uncategorized";
-            byCategory.set(catName, (byCategory.get(catName) ?? 0) + Math.abs(t.amount));
+            const category = t.category_id ? categoryById.get(t.category_id) : null;
+            const catId = t.category_id ?? "uncategorized";
+            const existingCat = byCategory.get(catId);
+            byCategory.set(catId, {
+              id: catId,
+              name: category?.name ?? "Uncategorized",
+              icon: category?.icon ?? null,
+              color: category?.color ?? null,
+              value: (existingCat?.value ?? 0) + Math.abs(t.amount),
+              href: `/transactions?category=${catId}&scope=household&${periodParams}`,
+            });
 
-            const personName = nameById.get(t.user_id) ?? "Unknown";
-            byPerson.set(personName, (byPerson.get(personName) ?? 0) + Math.abs(t.amount));
+            const existingPerson = byPerson.get(t.user_id);
+            byPerson.set(t.user_id, {
+              id: t.user_id,
+              name: nameById.get(t.user_id) ?? "Unknown",
+              value: (existingPerson?.value ?? 0) + Math.abs(t.amount),
+            });
           }
 
-          const categoryBreakdown = toBreakdown(
-            [...byCategory.entries()].map(([name, value]) => ({ name, value })),
-          );
-          const personBreakdown = [...byPerson.entries()].map(([name, value]) => ({
-            name,
-            value,
-          }));
+          const fullCategoryBreakdown = [...byCategory.values()].sort((a, b) => b.value - a.value);
+          const categoryBreakdown = toBreakdown(fullCategoryBreakdown);
+          const personBreakdown = [...byPerson.values()].sort((a, b) => b.value - a.value);
 
           return (
             <div key={currency} className="space-y-6">
@@ -191,14 +205,11 @@ export default async function HouseholdDashboardPage({
               </div>
 
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Spend by category</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <BreakdownChart data={categoryBreakdown} currency={currency} />
-                  </CardContent>
-                </Card>
+                <CategorySpendCard
+                  compact={categoryBreakdown}
+                  full={fullCategoryBreakdown}
+                  currency={currency}
+                />
                 <Card>
                   <CardHeader>
                     <CardTitle>Spend by person</CardTitle>
@@ -239,7 +250,7 @@ export default async function HouseholdDashboardPage({
               description: t.description,
               amount: t.amount,
               currency: t.currency,
-              category_name: t.category_id ? categoryById.get(t.category_id) ?? null : null,
+              category_name: t.category_id ? categoryById.get(t.category_id)?.name ?? null : null,
               owner_name: nameById.get(t.user_id) ?? null,
             }))}
             editable={{ currentUserId: user.id, accounts: accounts ?? [], categories: categories ?? [] }}

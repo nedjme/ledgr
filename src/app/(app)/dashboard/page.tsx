@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requireUser, getHousehold } from "@/lib/data";
 import { createClient } from "@/lib/supabase/server";
-import { periodRange, parsePeriod, parseAnchor, periodLabel } from "@/lib/period";
+import { periodRange, parsePeriod, parseAnchor, periodLabel, anchorParam } from "@/lib/period";
 import { formatCurrency } from "@/lib/format";
 import { dailySpendTrend } from "@/lib/trend";
 import { groupByCurrency } from "@/lib/group-by-currency";
@@ -12,8 +12,8 @@ import { StatCard } from "@/components/stat-card";
 import { HeroSummaryCard } from "@/components/hero-summary-card";
 import { AddTransactionDialog } from "@/components/add-transaction-dialog";
 import { TransactionList } from "@/components/transaction-list";
-import { BreakdownChart } from "@/components/charts/breakdown-chart";
-import { toBreakdown } from "@/lib/breakdown";
+import { CategorySpendCard } from "@/components/category-spend-card";
+import { toBreakdown, type BreakdownDatum } from "@/lib/breakdown";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
@@ -39,7 +39,7 @@ export default async function DashboardPage({
         .eq("user_id", user.id),
       supabase
         .from("categories")
-        .select("id, name")
+        .select("id, name, icon, color")
         .or(household ? `household_id.eq.${household.id}` : "household_id.is.null"),
       supabase
         .from("transactions")
@@ -53,7 +53,7 @@ export default async function DashboardPage({
       supabase.from("transactions").select("account_id, amount").eq("user_id", user.id),
     ]);
 
-  const categoryById = new Map((categories ?? []).map((c) => [c.id, c.name]));
+  const categoryById = new Map((categories ?? []).map((c) => [c.id, c]));
   const rows = transactions ?? [];
   const byCurrency = groupByCurrency(rows);
 
@@ -62,6 +62,8 @@ export default async function DashboardPage({
     currency,
     amount,
   }));
+
+  const periodParams = `period=${period}&anchor=${anchorParam(anchor)}`;
 
   return (
     <div className="space-y-6">
@@ -92,16 +94,23 @@ export default async function DashboardPage({
             .reduce((sum, t) => sum + t.amount, 0);
           const trend = dailySpendTrend(currencyRows, start, end);
 
-          const byCategory = new Map<string, number>();
+          const byCategory = new Map<string, BreakdownDatum>();
           for (const t of currencyRows) {
             if (t.amount >= 0) continue;
-            const name =
-              (t.category_id && categoryById.get(t.category_id)) || "Uncategorized";
-            byCategory.set(name, (byCategory.get(name) ?? 0) + Math.abs(t.amount));
+            const category = t.category_id ? categoryById.get(t.category_id) : null;
+            const id = t.category_id ?? "uncategorized";
+            const existing = byCategory.get(id);
+            byCategory.set(id, {
+              id,
+              name: category?.name ?? "Uncategorized",
+              icon: category?.icon ?? null,
+              color: category?.color ?? null,
+              value: (existing?.value ?? 0) + Math.abs(t.amount),
+              href: `/transactions?category=${id}&${periodParams}`,
+            });
           }
-          const breakdown = toBreakdown(
-            [...byCategory.entries()].map(([name, value]) => ({ name, value })),
-          );
+          const fullBreakdown = [...byCategory.values()].sort((a, b) => b.value - a.value);
+          const compactBreakdown = toBreakdown(fullBreakdown);
 
           return (
             <div key={currency} className="space-y-6">
@@ -131,14 +140,11 @@ export default async function DashboardPage({
                 />
               </div>
 
-              <Card>
-                <CardHeader>
-                  <CardTitle>Spend by category</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <BreakdownChart data={breakdown} currency={currency} />
-                </CardContent>
-              </Card>
+              <CategorySpendCard
+                compact={compactBreakdown}
+                full={fullBreakdown}
+                currency={currency}
+              />
             </div>
           );
         })
@@ -164,7 +170,7 @@ export default async function DashboardPage({
               description: t.description,
               amount: t.amount,
               currency: t.currency,
-              category_name: t.category_id ? categoryById.get(t.category_id) ?? null : null,
+              category_name: t.category_id ? categoryById.get(t.category_id)?.name ?? null : null,
             }))}
             editable={{ currentUserId: user.id, accounts: accounts ?? [], categories: categories ?? [] }}
           />
