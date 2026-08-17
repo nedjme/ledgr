@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { TrendingDown, TrendingUp } from "lucide-react";
 import { formatCurrency } from "@/lib/format";
 import { categoryColor, OTHER_COLOR } from "@/lib/category-color";
 import { categoryIconComponent } from "@/lib/category-icons";
@@ -38,6 +39,13 @@ export function BreakdownChart({
         const href = row.id !== null ? row.href : undefined;
         const clickable = href != null || (row.id === null && onOtherClick != null);
         const Icon = categoryIconComponent(row.icon);
+        // Categories here are always spend, so an increase is bad
+        // (red)/decrease is good (green) -- same convention as the mini
+        // report, no need for a tone prop.
+        const comparePct =
+          row.previousValue != null && row.previousValue > 0
+            ? ((row.value - row.previousValue) / row.previousValue) * 100
+            : null;
 
         const rowContent = (
           <>
@@ -56,6 +64,22 @@ export function BreakdownChart({
               <span className="shrink-0 tabular-nums text-muted-foreground">
                 {formatCurrency(row.value, currency)}{" "}
                 <span className="text-xs">({share}%)</span>
+                {comparePct != null && (
+                  <span
+                    className={cn(
+                      "ml-1.5 inline-flex items-center gap-0.5 text-xs font-medium tabular-nums",
+                      comparePct > 0 ? "text-destructive" : "text-chart-3",
+                    )}
+                  >
+                    {comparePct !== 0 &&
+                      (comparePct > 0 ? (
+                        <TrendingUp className="size-3" />
+                      ) : (
+                        <TrendingDown className="size-3" />
+                      ))}
+                    {comparePct === 0 ? "±0%" : `${Math.abs(Math.round(comparePct))}%`}
+                  </span>
+                )}
               </span>
             </div>
             <div className="h-2 w-full overflow-hidden rounded-full bg-muted">

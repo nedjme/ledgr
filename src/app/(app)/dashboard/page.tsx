@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { requireUser, getHousehold } from "@/lib/data";
 import { createClient } from "@/lib/supabase/server";
-import { periodRange, parsePeriod, parseAnchor, periodLabel, anchorParam } from "@/lib/period";
+import { resolvePeriod, periodRange } from "@/lib/period";
 import { formatCurrency } from "@/lib/format";
 import { dailySpendTrend } from "@/lib/trend";
 import { groupByCurrency } from "@/lib/group-by-currency";
@@ -21,42 +21,88 @@ import { Button } from "@/components/ui/button";
 export default async function DashboardPage({
   searchParams,
 }: {
-  searchParams: Promise<{ period?: string; anchor?: string }>;
+  searchParams: Promise<{
+    period?: string;
+    anchor?: string;
+    start?: string;
+    end?: string;
+    compare?: string;
+  }>;
 }) {
   const user = await requireUser();
   const household = await getHousehold(user.id);
   const params = await searchParams;
-  const period = parsePeriod(params.period);
-  const anchor = parseAnchor(params.anchor);
-  const { start, end } = periodRange(period, anchor);
+  const resolved = resolvePeriod(params);
+  // A custom range with no end picked yet still needs *something* to query
+  // -- falls back to the current month rather than fetching nothing.
+  const { start, end } = resolved.range ?? periodRange("month", resolved.anchor);
 
   const supabase = await createClient();
 
-  const [{ data: accounts }, { data: categories }, { data: transactions }, { data: allTransactions }] =
-    await Promise.all([
-      supabase
-        .from("accounts")
-        .select("id, user_id, name, currency, starting_balance")
-        .eq("user_id", user.id),
-      supabase
-        .from("categories")
-        .select("id, name, icon, color, parent_id")
-        .or(household ? `household_id.eq.${household.id}` : "household_id.is.null"),
-      supabase
-        .from("transactions")
-        .select("id, account_id, occurred_at, description, amount, currency, category_id")
-        .eq("user_id", user.id)
-        .gte("occurred_at", start)
-        .lte("occurred_at", end)
-        .order("occurred_at", { ascending: false }),
-      // Unscoped by period -- current balance is a snapshot as of now, not
-      // "as of this week/month".
-      supabase.from("transactions").select("account_id, amount").eq("user_id", user.id),
-    ]);
+  const [
+    { data: accounts },
+    { data: categories },
+    { data: transactions },
+    { data: allTransactions },
+    { data: compareTransactions },
+  ] = await Promise.all([
+    supabase
+      .from("accounts")
+      .select("id, user_id, name, currency, starting_balance")
+      .eq("user_id", user.id),
+    supabase
+      .from("categories")
+      .select("id, name, icon, color, parent_id")
+      .or(household ? `household_id.eq.${household.id}` : "household_id.is.null"),
+    supabase
+      .from("transactions")
+      .select("id, account_id, occurred_at, description, amount, currency, category_id")
+      .eq("user_id", user.id)
+      .gte("occurred_at", start)
+      .lte("occurred_at", end)
+      .order("occurred_at", { ascending: false }),
+    // Unscoped by period -- current balance is a snapshot as of now, not
+    // "as of this week/month".
+    supabase.from("transactions").select("account_id, amount").eq("user_id", user.id),
+    resolved.compareRange
+      ? supabase
+          .from("transactions")
+          .select("amount, currency, category_id")
+          .eq("user_id", user.id)
+          .gte("occurred_at", resolved.compareRange.start)
+          .lte("occurred_at", resolved.compareRange.end)
+      : Promise.resolve({
+          data: null as { amount: number; currency: string; category_id: string | null }[] | null,
+        }),
+  ]);
 
   const categoryById = new Map((categories ?? []).map((c) => [c.id, c]));
   const rows = transactions ?? [];
   const byCurrency = groupByCurrency(rows);
+
+  const compareTotalsByCurrency = new Map<string, { totalOut: number; totalIn: number }>();
+  // Per currency, per top-level category id -- lets the category
+  // breakdown show a per-row delta alongside the overall totals.
+  const comparePrevByCategory = new Map<string, Map<string, number>>();
+  for (const t of compareTransactions ?? []) {
+    const entry = compareTotalsByCurrency.get(t.currency) ?? { totalOut: 0, totalIn: 0 };
+    if (t.amount < 0) entry.totalOut += Math.abs(t.amount);
+    else entry.totalIn += t.amount;
+    compareTotalsByCurrency.set(t.currency, entry);
+
+    if (t.amount >= 0) continue;
+    const rawCategory = t.category_id ? categoryById.get(t.category_id) : null;
+    const catId = topCategoryId(rawCategory, categoryById) ?? "uncategorized";
+    const byCat = comparePrevByCategory.get(t.currency) ?? new Map<string, number>();
+    byCat.set(catId, (byCat.get(catId) ?? 0) + Math.abs(t.amount));
+    comparePrevByCategory.set(t.currency, byCat);
+  }
+  const compareLabel = resolved.compareLabel ?? undefined;
+
+  function pctChange(current: number, previous: number): number | null {
+    if (previous === 0) return current === 0 ? 0 : null;
+    return ((current - previous) / previous) * 100;
+  }
 
   const balances = accountBalances(accounts ?? [], allTransactions ?? []);
   const balanceTotals = [...sumByCurrency(balances)].map(([currency, amount]) => ({
@@ -64,14 +110,21 @@ export default async function DashboardPage({
     amount,
   }));
 
-  const periodParams = `period=${period}&anchor=${anchorParam(anchor)}`;
-
   return (
     <div className="space-y-6">
       <BalanceCard totals={balanceTotals} />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <PeriodToggle period={period} anchor={anchor} />
+        <PeriodToggle
+          period={resolved.mode}
+          anchor={resolved.anchor}
+          customRange={resolved.customRange}
+          compareOn={resolved.compareOn}
+          compareAnchor={resolved.compareAnchor}
+          compareRange={resolved.compareRange}
+          allowYear
+          allowCustom
+        />
         <AddTransactionDialog
           accounts={accounts ?? []}
           categories={categories ?? []}
@@ -95,6 +148,7 @@ export default async function DashboardPage({
             .reduce((sum, t) => sum + t.amount, 0);
           const trend = dailySpendTrend(currencyRows, start, end);
 
+          const comparePrevForCurrency = comparePrevByCategory.get(currency);
           const byCategory = new Map<string, BreakdownDatum>();
           for (const t of currencyRows) {
             if (t.amount >= 0) continue;
@@ -111,22 +165,38 @@ export default async function DashboardPage({
               icon: category?.icon ?? null,
               color: category?.color ?? null,
               value: (existing?.value ?? 0) + Math.abs(t.amount),
-              href: `/transactions?category=${id}&${periodParams}`,
+              href: `/transactions?category=${id}&${resolved.queryParams}`,
+              previousValue: comparePrevForCurrency ? (comparePrevForCurrency.get(id) ?? 0) : null,
             });
           }
           const fullBreakdown = [...byCategory.values()].sort((a, b) => b.value - a.value);
           const compactBreakdown = toBreakdown(fullBreakdown);
 
+          const compareTotals = compareTotalsByCurrency.get(currency);
+          const netSpendPct = compareTotals
+            ? pctChange(totalIn - totalOut, compareTotals.totalIn - compareTotals.totalOut)
+            : null;
+          const spentPct = compareTotals ? pctChange(totalOut, compareTotals.totalOut) : null;
+          const incomePct = compareTotals ? pctChange(totalIn, compareTotals.totalIn) : null;
+
           return (
             <div key={currency} className="space-y-6">
               <HeroSummaryCard
-                eyebrow={`${periodLabel(period, anchor)} · ${currency}`}
+                eyebrow={`${resolved.label} · ${currency}`}
                 label="Net spend"
                 value={formatCurrency(totalIn - totalOut, currency)}
                 meta={
                   <>
                     <span>Spent {formatCurrency(totalOut, currency)}</span>
                     <span>Income {formatCurrency(totalIn, currency)}</span>
+                    {netSpendPct != null && (
+                      <span>
+                        {netSpendPct === 0
+                          ? "No change"
+                          : `${netSpendPct > 0 ? "+" : ""}${Math.round(netSpendPct)}%`}{" "}
+                        {compareLabel}
+                      </span>
+                    )}
                   </>
                 }
               />
@@ -137,11 +207,15 @@ export default async function DashboardPage({
                   value={formatCurrency(totalOut, currency)}
                   tone="negative"
                   trend={trend}
+                  comparePct={spentPct}
+                  compareLabel={compareLabel}
                 />
                 <StatCard
                   label="Income"
                   value={formatCurrency(totalIn, currency)}
                   tone="positive"
+                  comparePct={incomePct}
+                  compareLabel={compareLabel}
                 />
               </div>
 
@@ -159,7 +233,12 @@ export default async function DashboardPage({
         <CardHeader>
           <CardTitle>Recent transactions</CardTitle>
           <CardAction>
-            <Button variant="ghost" size="sm" nativeButton={false} render={<Link href="/transactions" />}>
+            <Button
+              variant="ghost"
+              size="sm"
+              nativeButton={false}
+              render={<Link href={`/transactions?${resolved.queryParams}`} />}
+            >
               View all
             </Button>
           </CardAction>

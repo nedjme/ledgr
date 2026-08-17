@@ -5,16 +5,9 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Search } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { CategoryCombobox } from "@/components/category-combobox";
 
 const UNCATEGORIZED = "uncategorized";
-const ALL_CATEGORIES = "all";
 
 export function TransactionsFilterBar({
   categories,
@@ -43,12 +36,6 @@ export function TransactionsFilterBar({
     params.delete("page");
     router.push(`${pathname}?${params.toString()}`);
   }
-
-  const categoryItems = {
-    [ALL_CATEGORIES]: "All categories",
-    [UNCATEGORIZED]: "Uncategorized",
-    ...Object.fromEntries(categories.map((c) => [c.id, c.name])),
-  };
 
   return (
     <div className="flex flex-wrap items-center gap-3">
@@ -81,24 +68,14 @@ export function TransactionsFilterBar({
         />
       </form>
 
-      <Select
-        value={category || ALL_CATEGORIES}
-        onValueChange={(v) => v && navigate({ category: v === ALL_CATEGORIES ? null : v })}
-        items={categoryItems}
-      >
-        <SelectTrigger className="w-44">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value={ALL_CATEGORIES}>All categories</SelectItem>
-          <SelectItem value={UNCATEGORIZED}>Uncategorized</SelectItem>
-          {categories.map((c) => (
-            <SelectItem key={c.id} value={c.id}>
-              {c.name}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      <div className="w-44">
+        <CategoryCombobox
+          categories={[{ id: UNCATEGORIZED, name: "Uncategorized" }, ...categories]}
+          categoryId={category || null}
+          onCategoryIdChange={(v) => navigate({ category: v })}
+          placeholder="All categories"
+        />
+      </div>
     </div>
   );
 }

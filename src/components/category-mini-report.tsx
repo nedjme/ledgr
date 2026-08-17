@@ -18,12 +18,14 @@ export function CategoryMiniReport({
   categoryId,
   color,
   groups,
+  compareLabel = "vs previous period",
 }: {
   name: string;
   icon: string | null;
   categoryId: string;
   color: string | null;
   groups: CategoryReportGroup[];
+  compareLabel?: string;
 }) {
   if (groups.length === 0) return null;
 
@@ -80,7 +82,7 @@ export function CategoryMiniReport({
                 </div>
                 {group.trendVsPreviousPct !== null && (
                   <div>
-                    <p className="text-xs text-muted-foreground">Vs previous period</p>
+                    <p className="text-xs text-muted-foreground capitalize">{compareLabel}</p>
                     <p
                       className={cn(
                         "mt-1 flex items-center gap-1 text-xl font-bold tabular-nums",

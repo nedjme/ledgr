@@ -1,11 +1,14 @@
 import { requireUser, getHousehold } from "@/lib/data";
 import { createClient } from "@/lib/supabase/server";
-import { parsePeriod, parseAnchor, periodRange, shiftAnchor } from "@/lib/period";
+import { resolvePeriod } from "@/lib/period";
+import { formatCurrency } from "@/lib/format";
 import { TransactionsFilterBar } from "@/components/transactions-filter-bar";
+import { PeriodToggle } from "@/components/period-toggle";
 import { TransactionList } from "@/components/transaction-list";
 import { CategoryMiniReport } from "@/components/category-mini-report";
 import { BreakdownChart } from "@/components/charts/breakdown-chart";
 import { Pagination } from "@/components/pagination";
+import { StatCard } from "@/components/stat-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { BreakdownDatum } from "@/lib/breakdown";
 
@@ -21,6 +24,12 @@ export default async function TransactionsPage({
     page?: string;
     period?: string;
     anchor?: string;
+    start?: string;
+    end?: string;
+    compare?: string;
+    compareAnchor?: string;
+    compareStart?: string;
+    compareEnd?: string;
   }>;
 }) {
   const user = await requireUser();
@@ -32,11 +41,18 @@ export default async function TransactionsPage({
   const category = params.category ?? "";
   const page = Math.max(1, Number(params.page) || 1);
 
-  const hasPeriod = !!params.period;
-  const period = parsePeriod(params.period);
-  const anchor = parseAnchor(params.anchor);
-  const range = hasPeriod ? periodRange(period, anchor) : null;
+  // "All time" (no period param at all) is a state resolvePeriod doesn't
+  // know about -- it always resolves to a concrete Period, defaulting to
+  // "month" -- so it's layered on top here rather than passed down.
+  const isAllTime = !params.period;
+  const resolved = resolvePeriod(params);
+  const customRange = resolved.customRange;
+  const range = isAllTime ? null : resolved.range;
+  const compareOn = !isAllTime && resolved.compareOn;
+  const compareRange = isAllTime ? null : resolved.compareRange;
+  const compareLabel = isAllTime ? undefined : (resolved.compareLabel ?? undefined);
   const showReport = category !== "";
+  const showTotals = showReport || compareRange !== null;
 
   const supabase = await createClient();
 
@@ -93,22 +109,22 @@ export default async function TransactionsPage({
   }
   if (range) reportQuery = reportQuery.gte("occurred_at", range.start).lte("occurred_at", range.end);
 
-  const prevRange = range ? periodRange(period, shiftAnchor(period, anchor, -1)) : null;
   let previousReportQuery = supabase.from("transactions").select("amount, currency");
   previousReportQuery =
     scope === "household"
       ? previousReportQuery.eq("household_id", household!.id)
       : previousReportQuery.eq("user_id", user.id);
+  if (q) previousReportQuery = previousReportQuery.ilike("description", `%${q}%`);
   if (category === "uncategorized") previousReportQuery = previousReportQuery.is("category_id", null);
   else if (category) {
     previousReportQuery = categoryFilterIds
       ? previousReportQuery.in("category_id", categoryFilterIds)
       : previousReportQuery.eq("category_id", category);
   }
-  if (prevRange) {
+  if (compareRange) {
     previousReportQuery = previousReportQuery
-      .gte("occurred_at", prevRange.start)
-      .lte("occurred_at", prevRange.end);
+      .gte("occurred_at", compareRange.start)
+      .lte("occurred_at", compareRange.end);
   }
 
   const from = (page - 1) * PAGE_SIZE;
@@ -125,12 +141,12 @@ export default async function TransactionsPage({
     scope === "household"
       ? supabase.from("household_members").select("user_id").eq("household_id", household!.id)
       : Promise.resolve({ data: null as { user_id: string }[] | null }),
-    showReport
+    showTotals
       ? reportQuery
       : Promise.resolve({
           data: null as { amount: number; currency: string; category_id: string | null }[] | null,
         }),
-    showReport && prevRange
+    showTotals && compareRange
       ? previousReportQuery
       : Promise.resolve({ data: null as { amount: number; currency: string }[] | null }),
   ]);
@@ -197,7 +213,7 @@ export default async function TransactionsPage({
     .map(([currency, { total, count }]) => {
       const previousTotal = previousTotalByCurrency.get(currency) ?? 0;
       const trendVsPreviousPct =
-        range && previousTotal > 0 ? ((total - previousTotal) / previousTotal) * 100 : null;
+        compareRange && previousTotal > 0 ? ((total - previousTotal) / previousTotal) * 100 : null;
       return { currency, total, count, trendVsPreviousPct };
     });
 
@@ -210,7 +226,23 @@ export default async function TransactionsPage({
           categoryId={category}
           color={reportCategory?.color ?? null}
           groups={reportGroups}
+          compareLabel={compareLabel}
         />
+      )}
+
+      {!showReport && compareRange && reportGroups.length > 0 && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {reportGroups.map((group) => (
+            <StatCard
+              key={group.currency}
+              label={`Total spent (${group.currency})`}
+              value={formatCurrency(group.total, group.currency)}
+              tone="negative"
+              comparePct={group.trendVsPreviousPct}
+              compareLabel={compareLabel}
+            />
+          ))}
+        </div>
       )}
 
       {[...subcategoryByCurrency.entries()].map(([currency, subMap]) => (
@@ -226,13 +258,26 @@ export default async function TransactionsPage({
         </Card>
       ))}
 
-      <TransactionsFilterBar
-        categories={categories ?? []}
-        showScope={!!household}
-        scope={scope}
-        q={q}
-        category={category}
-      />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <TransactionsFilterBar
+          categories={categories ?? []}
+          showScope={!!household}
+          scope={scope}
+          q={q}
+          category={category}
+        />
+        <PeriodToggle
+          period={isAllTime ? null : resolved.mode}
+          anchor={resolved.anchor}
+          customRange={customRange}
+          compareOn={compareOn}
+          compareAnchor={resolved.compareAnchor}
+          compareRange={resolved.compareRange}
+          allowAll
+          allowYear
+          allowCustom
+        />
+      </div>
 
       <Card>
         <CardContent>
@@ -265,6 +310,12 @@ export default async function TransactionsPage({
           category,
           period: params.period,
           anchor: params.anchor,
+          start: params.start,
+          end: params.end,
+          compare: params.compare,
+          compareAnchor: params.compareAnchor,
+          compareStart: params.compareStart,
+          compareEnd: params.compareEnd,
         }}
       />
     </div>
