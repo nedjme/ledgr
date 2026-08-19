@@ -120,3 +120,24 @@ If the target isn't a real `<button>` (an `<a>`/`Link`), also pass
 `Select` needs an explicit `items={{ value: label }}` map for `<SelectValue>`
 to show the right label before the popup has ever been opened — see any
 existing `Select` usage for the pattern.
+
+## Date fields
+
+Never use a bare `<input type="date">` for a single date in a form —
+use `TransactionDatePicker` (`src/components/transaction-date-picker.tsx`)
+instead, everywhere in the app, not just transactions. It renders a button
+styled like the rest of the form that opens the same calendar-grid Sheet
+used across the app, plus a hidden input so it drops into `form.get(name)`
+exactly like the native input did — swapping it in is a drop-in
+replacement, no `onSubmit` changes needed. `PeriodDatePicker`
+(`period-date-picker.tsx`) is the separate anchor-based variant for the
+period toggle/dashboard — don't reuse it for a plain form field.
+
+For an *optional* date (target date, recurrence end, …), don't pass an
+empty `TransactionDatePicker` — it always shows a real date (defaulting to
+today), which reads as already-set. Instead gate it behind a
+show/hide toggle: an outlined "Add a ___" button with a `CalendarDays`
+icon when unset, swapping to the picker with a small "Remove" link once
+set. See `add-goal-dialog.tsx` / `edit-goal-dialog.tsx` (`hasTargetDate`)
+or `add-simulation-event-dialog.tsx` / `edit-simulation-event-dialog.tsx`
+(`hasRecurrenceEnd`) for the exact pattern to copy.

@@ -2,12 +2,14 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { CalendarDays } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CategoryCombobox } from "@/components/category-combobox";
+import { TransactionDatePicker } from "@/components/transaction-date-picker";
 import { createClient } from "@/lib/supabase/client";
 import { formatCurrency } from "@/lib/format";
 import type { RecurrenceKind } from "@/lib/goals";
@@ -52,6 +54,7 @@ export function EditSimulationEventDialog({
   const [amount, setAmount] = useState(String(Math.abs(event.amount)));
   const [categoryId, setCategoryId] = useState<string | null>(event.category_id ?? OVERALL);
   const [recurrence, setRecurrence] = useState<RecurrenceKind>(event.recurrence);
+  const [hasRecurrenceEnd, setHasRecurrenceEnd] = useState(event.recurrence_end !== null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -184,17 +187,39 @@ export function EditSimulationEventDialog({
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1.5">
               <Label htmlFor="edit_event_date">{recurrence === "once" ? "Date" : "Starts"}</Label>
-              <Input id="edit_event_date" name="occurs_on" type="date" defaultValue={event.occurs_on} required />
+              <TransactionDatePicker id="edit_event_date" name="occurs_on" defaultValue={event.occurs_on} required />
             </div>
             {recurrence !== "once" && (
               <div className="space-y-1.5">
-                <Label htmlFor="edit_event_recurrence_end">Ends (optional)</Label>
-                <Input
-                  id="edit_event_recurrence_end"
-                  name="recurrence_end"
-                  type="date"
-                  defaultValue={event.recurrence_end ?? undefined}
-                />
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="edit_event_recurrence_end">Ends (optional)</Label>
+                  {hasRecurrenceEnd && (
+                    <button
+                      type="button"
+                      onClick={() => setHasRecurrenceEnd(false)}
+                      className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
+                {hasRecurrenceEnd ? (
+                  <TransactionDatePicker
+                    id="edit_event_recurrence_end"
+                    name="recurrence_end"
+                    defaultValue={event.recurrence_end ?? undefined}
+                  />
+                ) : (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="w-full justify-start gap-2 font-normal text-muted-foreground"
+                    onClick={() => setHasRecurrenceEnd(true)}
+                  >
+                    <CalendarDays className="size-4" />
+                    Add an end date
+                  </Button>
+                )}
               </div>
             )}
           </div>

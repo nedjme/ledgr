@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useMemo, useOptimistic, useRef, useState, useTransition } from "react";
+import { createContext, useCallback, useContext, useMemo, useOptimistic, useState, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 type NavigateOptions = {
@@ -53,9 +53,9 @@ export function OptimisticParamsProvider({ children }: { children: React.ReactNo
   // -- this component stays mounted across client-side navigations (it
   // lives in AppShell, above `children`), so nothing else would clear it.
   const [shallowParams, setShallowParams] = useState<Record<string, string>>({});
-  const prevPathname = useRef(pathname);
-  if (prevPathname.current !== pathname) {
-    prevPathname.current = pathname;
+  const [prevPathname, setPrevPathname] = useState(pathname);
+  if (prevPathname !== pathname) {
+    setPrevPathname(pathname);
     if (Object.keys(shallowParams).length > 0) setShallowParams({});
   }
 
