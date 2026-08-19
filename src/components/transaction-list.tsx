@@ -13,6 +13,7 @@ export type TransactionRow = {
   user_id: string;
   occurred_at: string;
   description: string | null;
+  description_key: string | null;
   amount: number;
   currency: string;
   category_name: string | null;
@@ -102,6 +103,7 @@ function TransactionRowItem({
       {canEdit && editable && (
         <EditTransactionDialog
           transaction={row}
+          currentUserId={editable.currentUserId}
           accounts={editable.accounts}
           categories={editable.categories}
           open={open}

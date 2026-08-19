@@ -145,7 +145,7 @@ async function HouseholdDashboardData({
     supabase.from("household_members").select("user_id").eq("household_id", householdId),
     supabase
       .from("transactions")
-      .select("id, account_id, occurred_at, description, amount, currency, category_id, user_id")
+      .select("id, account_id, occurred_at, description, description_key, amount, currency, category_id, user_id")
       .eq("household_id", householdId)
       .gte("occurred_at", start)
       .lte("occurred_at", end)
@@ -479,6 +479,7 @@ async function HouseholdDashboardData({
                 user_id: t.user_id,
                 occurred_at: t.occurred_at,
                 description: t.description,
+                description_key: t.description_key,
                 amount: t.amount,
                 currency: t.currency,
                 category_name: t.category_id ? categoryById.get(t.category_id)?.name ?? null : null,

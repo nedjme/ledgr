@@ -169,7 +169,7 @@ async function TransactionsData({
   let transactionsQuery = supabase
     .from("transactions")
     .select(
-      "id, account_id, occurred_at, description, amount, currency, category_id, user_id",
+      "id, account_id, occurred_at, description, description_key, amount, currency, category_id, user_id",
       { count: "exact" },
     );
   transactionsQuery =
@@ -352,6 +352,7 @@ async function TransactionsData({
               user_id: t.user_id,
               occurred_at: t.occurred_at,
               description: t.description,
+              description_key: t.description_key,
               amount: t.amount,
               currency: t.currency,
               category_name: t.category_id ? categoryById.get(t.category_id)?.name ?? null : null,

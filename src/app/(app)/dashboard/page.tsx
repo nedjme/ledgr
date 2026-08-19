@@ -144,7 +144,7 @@ async function DashboardData({
       : Promise.resolve({ data: [] as { account_id: string; user_id: string; currency: string; balance: number }[] }),
     supabase
       .from("transactions")
-      .select("id, account_id, occurred_at, description, amount, currency, category_id")
+      .select("id, account_id, occurred_at, description, description_key, amount, currency, category_id")
       .eq("user_id", userId)
       .gte("occurred_at", start)
       .lte("occurred_at", end)
@@ -423,6 +423,7 @@ async function DashboardData({
                 user_id: userId,
                 occurred_at: t.occurred_at,
                 description: t.description,
+                description_key: t.description_key,
                 amount: t.amount,
                 currency: t.currency,
                 category_name: t.category_id ? categoryById.get(t.category_id)?.name ?? null : null,

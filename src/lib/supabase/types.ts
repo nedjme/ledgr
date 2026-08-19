@@ -147,6 +147,7 @@ export type Database = {
           amount: number;
           currency: string;
           description: string | null;
+          description_key: string | null;
           occurred_at: string;
           source: string;
           created_at: string;
@@ -266,6 +267,30 @@ export type Database = {
         };
         Relationships: [];
       };
+      description_category_rules: {
+        Row: {
+          id: string;
+          user_id: string;
+          pattern: string;
+          category_id: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          pattern: string;
+          category_id: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          pattern?: string;
+          category_id?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
     };
     Views: Record<string, never>;
     Functions: {
@@ -280,6 +305,10 @@ export type Database = {
       account_balances: {
         Args: { target_account_ids: string[] };
         Returns: { account_id: string; user_id: string; currency: string; balance: number }[];
+      };
+      apply_category_to_similar: {
+        Args: { p_transaction_id: string; p_category_id: string; p_remember: boolean };
+        Returns: number;
       };
     };
     Enums: Record<string, never>;

@@ -112,6 +112,20 @@ function suggestCategory(description: string) {
   return null;
 }
 
+// Must match public.normalize_description() in
+// supabase/migrations/0019_description_category_memory.sql exactly -- that
+// SQL function is the source of truth transactions.description_key and
+// description_category_rules.pattern are keyed on, and this is its Deno
+// copy (edge functions can't import from src/lib -- see
+// src/lib/categorize.ts's own copy of the same algorithm).
+function normalizeDescription(description: string): string | null {
+  const normalized = description
+    .toLowerCase()
+    .replace(/[^a-z]+/g, " ")
+    .trim();
+  return normalized || null;
+}
+
 type Mapping = {
   date: number;
   description: number;
@@ -192,11 +206,12 @@ Deno.serve(async (req) => {
       })
       .filter((t) => t.occurred_at && t.amount !== 0);
 
-    const { data: categories } = await supabase
-      .from("categories")
-      .select("id, name")
-      .eq("user_id", user.id);
+    const [{ data: categories }, { data: rules }] = await Promise.all([
+      supabase.from("categories").select("id, name").eq("user_id", user.id),
+      supabase.from("description_category_rules").select("pattern, category_id").eq("user_id", user.id),
+    ]);
     const categoryIdByName = new Map((categories ?? []).map((c) => [c.name, c.id]));
+    const categoryIdByPattern = new Map((rules ?? []).map((r) => [r.pattern, r.category_id]));
 
     // Resolve a category name to an id, creating it (and caching it for the
     // rest of this import) the first time it's seen -- either from the
@@ -219,12 +234,19 @@ Deno.serve(async (req) => {
 
     const rows = [];
     for (const t of normalized) {
-      const categoryName = t.category_name || suggestCategory(t.description);
+      // A learned correction outranks the generic starter keyword list --
+      // it's specific to this user and this exact merchant, where the
+      // keyword list is just a first guess. Falls back to the statement's
+      // own category column, then the keyword guess, same as before.
+      const key = normalizeDescription(t.description);
+      const learnedCategoryId = key ? categoryIdByPattern.get(key) : undefined;
+      const categoryId =
+        learnedCategoryId ?? (await resolveCategoryId(t.category_name || suggestCategory(t.description)));
       rows.push({
         account_id: accountId,
         user_id: user.id,
         household_id: householdId,
-        category_id: await resolveCategoryId(categoryName),
+        category_id: categoryId ?? null,
         amount: t.amount,
         currency,
         description: t.description,
