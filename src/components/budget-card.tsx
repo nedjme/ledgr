@@ -19,6 +19,7 @@ export function BudgetCard({
   spent,
   weeklyBreakdown,
   categories,
+  existingBudgets,
   isOwner,
   ownerName,
 }: {
@@ -27,6 +28,7 @@ export function BudgetCard({
   spent: number;
   weeklyBreakdown: WeekBucket[];
   categories: BudgetCategory[];
+  existingBudgets: { category_id: string | null; currency: string; amount: number }[];
   isOwner: boolean;
   ownerName: string | null;
 }) {
@@ -108,7 +110,13 @@ export function BudgetCard({
         }}
       />
       {isOwner && (
-        <EditBudgetDialog budget={budget} categories={categories} open={editOpen} onOpenChange={setEditOpen} />
+        <EditBudgetDialog
+          budget={budget}
+          categories={categories}
+          existingBudgets={existingBudgets}
+          open={editOpen}
+          onOpenChange={setEditOpen}
+        />
       )}
     </>
   );

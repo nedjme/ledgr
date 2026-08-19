@@ -8,6 +8,8 @@ import { Label } from "@/components/ui/label";
 import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { CategoryCombobox } from "@/components/category-combobox";
 import { createClient } from "@/lib/supabase/client";
+import { budgetExceedsOverallCap } from "@/lib/budgets";
+import { formatCurrency } from "@/lib/format";
 
 const OVERALL = "overall";
 
@@ -21,32 +23,63 @@ type EditableBudget = {
 export function EditBudgetDialog({
   budget,
   categories,
+  existingBudgets,
   open,
   onOpenChange,
 }: {
   budget: EditableBudget;
   categories: { id: string; name: string }[];
+  existingBudgets: { category_id: string | null; currency: string; amount: number }[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
   const router = useRouter();
   const supabase = createClient();
   const [categoryId, setCategoryId] = useState<string | null>(budget.category_id ?? OVERALL);
+  const [amount, setAmount] = useState(String(budget.amount));
+  const [currency, setCurrency] = useState(budget.currency);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const effectiveCategoryId = categoryId === OVERALL ? null : categoryId;
+  const numericAmount = Number(amount);
+
+  // Same client-side mirror of budgets_scope_idx as AddBudgetDialog --
+  // existingBudgets is the caller's own budgets minus this one, so saving
+  // with an unchanged category/currency is never flagged as a duplicate
+  // of itself.
+  const existingKeys = new Set(
+    existingBudgets.map((b) => `${b.category_id ?? OVERALL}::${b.currency.toUpperCase()}`),
+  );
+  const isDuplicate = existingKeys.has(`${categoryId ?? OVERALL}::${currency.toUpperCase()}`);
+  const categoryName =
+    categoryId === OVERALL || categoryId === null
+      ? "Overall"
+      : (categories.find((c) => c.id === categoryId)?.name ?? "this category");
+  const exceedsCap =
+    !isDuplicate &&
+    numericAmount > 0 &&
+    budgetExceedsOverallCap(effectiveCategoryId, numericAmount, currency, existingBudgets);
+  const sameCurrencyBudgets = existingBudgets.filter(
+    (b) => b.currency.toUpperCase() === currency.toUpperCase(),
+  );
+  const categoryTotal = sameCurrencyBudgets
+    .filter((b) => b.category_id !== null)
+    .reduce((sum, b) => sum + b.amount, 0);
+  const overallAmount = sameCurrencyBudgets.find((b) => b.category_id === null)?.amount;
+
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (isDuplicate || exceedsCap) return;
     setSaving(true);
     setError(null);
 
-    const form = new FormData(e.currentTarget);
     const { error: updateError } = await supabase
       .from("budgets")
       .update({
-        category_id: categoryId === OVERALL ? null : categoryId,
-        amount: Number(form.get("amount")),
-        currency: form.get("currency") as string,
+        category_id: effectiveCategoryId,
+        amount: numericAmount,
+        currency,
       })
       .eq("id", budget.id);
 
@@ -103,7 +136,8 @@ export function EditBudgetDialog({
                 type="number"
                 step="0.01"
                 min="0.01"
-                defaultValue={budget.amount}
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
                 required
               />
             </div>
@@ -112,11 +146,30 @@ export function EditBudgetDialog({
               <Input
                 id="edit_budget_currency"
                 name="currency"
-                defaultValue={budget.currency}
+                value={currency}
+                onChange={(e) => setCurrency(e.target.value)}
                 required
               />
             </div>
           </div>
+          {isDuplicate && (
+            <p className="text-sm text-destructive">
+              You already have a {categoryName} budget in {currency.toUpperCase() || "this currency"}.
+            </p>
+          )}
+          {exceedsCap && effectiveCategoryId === null && (
+            <p className="text-sm text-destructive">
+              Your category budgets in {currency.toUpperCase()} already total{" "}
+              {formatCurrency(categoryTotal, currency)}, more than this Overall amount.
+            </p>
+          )}
+          {exceedsCap && effectiveCategoryId !== null && overallAmount != null && (
+            <p className="text-sm text-destructive">
+              That would bring your {currency.toUpperCase()} category budgets to{" "}
+              {formatCurrency(categoryTotal + numericAmount, currency)}, over your Overall budget of{" "}
+              {formatCurrency(overallAmount, currency)}.
+            </p>
+          )}
           {error && <p className="text-sm text-destructive">{error}</p>}
           <SheetFooter className="sm:justify-between">
             <Button
@@ -128,7 +181,7 @@ export function EditBudgetDialog({
             >
               Delete
             </Button>
-            <Button type="submit" disabled={saving}>
+            <Button type="submit" disabled={saving || isDuplicate || exceedsCap}>
               {saving ? "Saving..." : "Save"}
             </Button>
           </SheetFooter>

@@ -65,9 +65,17 @@ export function BudgetsGoalsTabs({
   // household member's, read-only) resolves every shown budget's label;
   // `ownCategories` is the narrower list offered as picker choices, since
   // a budget can only be scoped to a category you own.
-  const topLevelCategories = categories.filter((c) => c.parent_id === null);
   const topLevelOwnCategories = ownCategories.filter((c) => c.parent_id === null);
-  const categoryById = new Map(topLevelCategories.map((c) => [c.id, c]));
+  // Built from every category, not just topLevelCategories -- a budget's
+  // category can end up nested under a new parent after the budget was
+  // created (see budgetSpent's own comment), and this is only used to
+  // resolve a budget's existing category_id to a label/icon/color, not to
+  // offer new picker choices, so it needs to find it either way.
+  const categoryById = new Map(categories.map((c) => [c.id, c]));
+  // The uniqueness constraint (one budget per category-or-overall, per
+  // currency) is scoped per user, so a household member's own budgets never
+  // block or get blocked by yours -- only your own count here.
+  const ownBudgets = budgets.filter((b) => b.user_id === currentUserId);
 
   return (
     <Tabs value={tab} onValueChange={(v) => v && setTab(v)}>
@@ -81,6 +89,7 @@ export function BudgetsGoalsTabs({
             categories={topLevelOwnCategories}
             defaultCurrency={defaultCurrency}
             householdId={householdId}
+            existingBudgets={ownBudgets}
           />
         ) : (
           <AddGoalDialog defaultCurrency={defaultCurrency} householdId={householdId} />
@@ -104,6 +113,7 @@ export function BudgetsGoalsTabs({
                 spent={budget.spent}
                 weeklyBreakdown={budget.weeklyBreakdown}
                 categories={topLevelOwnCategories}
+                existingBudgets={ownBudgets.filter((b) => b.id !== budget.id)}
                 isOwner={budget.user_id === currentUserId}
                 ownerName={budget.user_id === currentUserId ? null : (nameById.get(budget.user_id) ?? null)}
               />

@@ -10,6 +10,34 @@ export function budgetMonthLabel() {
   return periodLabel("month", new Date());
 }
 
+// An Overall budget is a cap on total spend in a currency -- category
+// budgets underneath it should never collectively promise more than that
+// cap allows. Works in both directions: saving a category budget checks it
+// against an existing Overall (if any), saving the Overall itself checks it
+// against the category budgets already under it. `otherBudgets` is every
+// other budget for the same owner (i.e. excluding whichever one is being
+// saved) -- currency comparison is case-insensitive since the currency
+// field is free text.
+export function budgetExceedsOverallCap(
+  categoryId: string | null,
+  amount: number,
+  currency: string,
+  otherBudgets: { category_id: string | null; currency: string; amount: number }[],
+): boolean {
+  const sameCurrency = otherBudgets.filter((b) => b.currency.toUpperCase() === currency.toUpperCase());
+  const categoryTotal = sameCurrency
+    .filter((b) => b.category_id !== null)
+    .reduce((sum, b) => sum + b.amount, 0);
+
+  if (categoryId === null) {
+    return categoryTotal > amount;
+  }
+
+  const overall = sameCurrency.find((b) => b.category_id === null);
+  if (!overall) return false;
+  return categoryTotal + amount > overall.amount;
+}
+
 // Sums spend in a date range against a budget's scope (a single top-level
 // category, rolling up its subcategories, or every category for an
 // "overall" budget) -- computed live off transactions rather than a
@@ -41,6 +69,12 @@ export function budgetSpent<T extends CategoryNode>(
     )
     .filter((t) => {
       if (!categoryId) return true;
+      // Exact match covers a budget whose category was later nested under a
+      // new parent (categories.parent_id can change after a budget is
+      // created) -- topCategoryId(t) would then roll up to the *new*
+      // parent, never matching the budget's still-stored subcategory id, so
+      // spend against it would silently go to zero without this.
+      if (t.category_id === categoryId) return true;
       const category = t.category_id ? categoryById.get(t.category_id) : null;
       return topCategoryId(category, categoryById) === categoryId;
     })
