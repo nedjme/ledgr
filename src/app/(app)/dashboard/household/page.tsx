@@ -229,7 +229,7 @@ async function HouseholdDashboardData({
   for (const t of compareTransactions ?? []) {
     const entry = compareTotalsByCurrency.get(t.currency) ?? { totalOut: 0, totalIn: 0 };
     if (t.amount < 0) entry.totalOut += Math.abs(t.amount);
-    else entry.totalIn += t.amount;
+    else entry.totalIn += Number(t.amount);
     compareTotalsByCurrency.set(t.currency, entry);
 
     if (t.amount >= 0) continue;
@@ -268,7 +268,7 @@ async function HouseholdDashboardData({
             .reduce((sum, t) => sum + Math.abs(t.amount), 0);
           const totalIn = currencyRows
             .filter((t) => t.amount > 0)
-            .reduce((sum, t) => sum + t.amount, 0);
+            .reduce((sum, t) => sum + Number(t.amount), 0);
 
           const trendSeries = spendTrendSeries(currencyRows, start, end);
           const compareTrendSeries = resolved.compareRange

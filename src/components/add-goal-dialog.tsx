@@ -118,9 +118,10 @@ export function AddGoalDialog({
             )}
           </div>
           <p className="text-xs text-muted-foreground">
-            Add a target date to see whether your contributions are on pace to
-            reach it in time.
-            {householdId && " Your household can see this goal, but only you can edit it or add contributions."}
+            Progress comes from your real account balances and spending --
+            add a target date to see whether you&apos;re on pace to reach it in
+            time.
+            {householdId && " Your household can see this goal, but only you can edit it."}
           </p>
           {error && <p className="text-sm text-destructive">{error}</p>}
           <SheetFooter>

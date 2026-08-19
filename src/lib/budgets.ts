@@ -24,10 +24,13 @@ export function budgetExceedsOverallCap(
   currency: string,
   otherBudgets: { category_id: string | null; currency: string; amount: number }[],
 ): boolean {
+  // Number() -- Postgres numeric columns come back from Supabase as
+  // strings, and `+` silently concatenates instead of adding once there's
+  // more than one existing budget in the same currency.
   const sameCurrency = otherBudgets.filter((b) => b.currency.toUpperCase() === currency.toUpperCase());
   const categoryTotal = sameCurrency
     .filter((b) => b.category_id !== null)
-    .reduce((sum, b) => sum + b.amount, 0);
+    .reduce((sum, b) => sum + Number(b.amount), 0);
 
   if (categoryId === null) {
     return categoryTotal > amount;
@@ -35,7 +38,7 @@ export function budgetExceedsOverallCap(
 
   const overall = sameCurrency.find((b) => b.category_id === null);
   if (!overall) return false;
-  return categoryTotal + amount > overall.amount;
+  return categoryTotal + amount > Number(overall.amount);
 }
 
 // Sums spend in a date range against a budget's scope (a single top-level

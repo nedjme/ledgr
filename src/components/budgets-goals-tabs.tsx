@@ -7,7 +7,10 @@ import { AddBudgetDialog } from "@/components/add-budget-dialog";
 import { AddGoalDialog } from "@/components/add-goal-dialog";
 import { BudgetCard } from "@/components/budget-card";
 import { GoalCard } from "@/components/goal-card";
+import { GoalSimulationEvents } from "@/components/goal-simulation-events";
+import { GoalSavingsHistory } from "@/components/goal-savings-history";
 import type { WeekBucket } from "@/lib/budgets";
+import type { RecurrenceKind } from "@/lib/goals";
 
 type BudgetCategory = {
   id: string;
@@ -35,8 +38,17 @@ type GoalWithProgress = {
   target_date: string | null;
   currency: string;
   created_at: string;
-  contributed: number;
-  contributions: { id: string; amount: number; occurred_at: string }[];
+  progress: number;
+  savingsByWindow: { months: number; income: number; spend: number; net: number }[];
+  events: {
+    id: string;
+    label: string;
+    amount: number;
+    occurs_on: string;
+    category_id: string | null;
+    recurrence: RecurrenceKind;
+    recurrence_end: string | null;
+  }[];
 };
 
 export function BudgetsGoalsTabs({
@@ -76,6 +88,31 @@ export function BudgetsGoalsTabs({
   // currency) is scoped per user, so a household member's own budgets never
   // block or get blocked by yours -- only your own count here.
   const ownBudgets = budgets.filter((b) => b.user_id === currentUserId);
+
+  // Simulation events and the savings assumption are both scoped by
+  // (owner, currency), not by a specific goal -- shown once per distinct
+  // pair here instead of once per goal, so adding a bonus or setting an
+  // income assumption doesn't mean re-adding it under every goal that
+  // happens to share the currency. One representative goal per pair
+  // carries the right values already (see budgets/page.tsx).
+  type SimulationGroup = {
+    userId: string;
+    currency: string;
+    events: GoalWithProgress["events"];
+    savingsByWindow: GoalWithProgress["savingsByWindow"];
+  };
+  const simulationGroups = new Map<string, SimulationGroup>();
+  for (const goal of goals) {
+    const key = `${goal.user_id}::${goal.currency}`;
+    if (!simulationGroups.has(key)) {
+      simulationGroups.set(key, {
+        userId: goal.user_id,
+        currency: goal.currency,
+        events: goal.events,
+        savingsByWindow: goal.savingsByWindow,
+      });
+    }
+  }
 
   return (
     <Tabs value={tab} onValueChange={(v) => v && setTab(v)}>
@@ -122,7 +159,36 @@ export function BudgetsGoalsTabs({
         )}
       </TabsContent>
 
-      <TabsContent value="goals" className="mt-6">
+      <TabsContent value="goals" className="mt-6 space-y-6">
+        {simulationGroups.size > 0 && (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {[...simulationGroups.values()].map((group) => (
+              <Card key={`${group.userId}::${group.currency}`}>
+                <CardContent className="space-y-5">
+                  <GoalSavingsHistory
+                    currency={group.currency}
+                    savingsByWindow={group.savingsByWindow}
+                    ownerName={group.userId === currentUserId ? null : (nameById.get(group.userId) ?? null)}
+                  />
+                  <div className="border-t border-border pt-4">
+                    <GoalSimulationEvents
+                      currency={group.currency}
+                      events={group.events.map((ev) => ({
+                        ...ev,
+                        category_name: ev.category_id ? (categoryById.get(ev.category_id)?.name ?? null) : null,
+                      }))}
+                      categories={topLevelOwnCategories}
+                      budgets={ownBudgets}
+                      isOwner={group.userId === currentUserId}
+                      ownerName={group.userId === currentUserId ? null : (nameById.get(group.userId) ?? null)}
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        )}
+
         {goals.length === 0 ? (
           <Card>
             <CardContent className="py-8 text-center text-sm text-muted-foreground">
@@ -135,8 +201,8 @@ export function BudgetsGoalsTabs({
               <GoalCard
                 key={goal.id}
                 goal={goal}
-                contributed={goal.contributed}
-                contributions={goal.contributions}
+                progress={goal.progress}
+                events={goal.events}
                 isOwner={goal.user_id === currentUserId}
                 ownerName={goal.user_id === currentUserId ? null : (nameById.get(goal.user_id) ?? null)}
               />

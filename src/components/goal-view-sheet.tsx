@@ -1,10 +1,19 @@
 "use client";
 
-import { PiggyBank, TrendingDown, TrendingUp } from "lucide-react";
+import { AlertTriangle, PiggyBank, TrendingDown, TrendingUp } from "lucide-react";
 import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
+import { GoalForecastChart } from "@/components/charts/goal-forecast-chart";
 import { formatCurrency } from "@/lib/format";
-import { goalProgress, goalPace } from "@/lib/goals";
+import {
+  goalProgress,
+  goalPace,
+  goalDipInfo,
+  simulateCompletionDate,
+  goalTimelineSeries,
+  resolveSimulationHorizon,
+  type RecurrenceKind,
+} from "@/lib/goals";
 import { cn } from "@/lib/utils";
 
 type ViewableGoal = {
@@ -15,33 +24,61 @@ type ViewableGoal = {
   created_at: string;
 };
 
-type Contribution = { id: string; amount: number; occurred_at: string };
+type Event = {
+  id: string;
+  label: string;
+  amount: number;
+  occurs_on: string;
+  category_id: string | null;
+  recurrence: RecurrenceKind;
+  recurrence_end: string | null;
+};
+
+const PACE_LABEL = {
+  "on-track": "On track",
+  behind: "Behind pace",
+  stalled: "Not on pace",
+  "at-risk": "At risk",
+};
+
+function formatProjectedDate(date: Date | null) {
+  if (!date) return null;
+  return date.toLocaleDateString(undefined, { month: "long", day: "numeric", year: "numeric" });
+}
 
 export function GoalViewSheet({
   goal,
-  contributed,
-  contributions,
+  progress,
+  events,
   isOwner,
   ownerName,
   open,
   onOpenChange,
   onEdit,
-  onAddContribution,
 }: {
   goal: ViewableGoal;
-  contributed: number;
-  contributions: Contribution[];
+  progress: number;
+  events: Event[];
   isOwner: boolean;
   ownerName: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onEdit: () => void;
-  onAddContribution: () => void;
 }) {
-  const pct = goalProgress(goal.target_amount, contributed);
-  const pace = goal.target_date
-    ? goalPace(goal.target_amount, contributed, goal.created_at, goal.target_date)
-    : null;
+  const remaining = Math.max(0, goal.target_amount - progress);
+  const pct = goalProgress(goal.target_amount, progress);
+  const pace = goalPace(goal.target_amount, progress, events, goal.target_date);
+  const projected = simulateCompletionDate(remaining, events);
+
+  const horizon = resolveSimulationHorizon(goal.target_date, events, projected);
+  const series = goalTimelineSeries(progress, events, horizon);
+
+  // Separate from the done/at-risk verdict on purpose -- a goal can be
+  // "done" (you'll have the target by the deadline) while still dipping
+  // below it temporarily along the way, which is worth knowing but isn't a
+  // reason to call the goal at risk. Only meaningful with a deadline.
+  const targetDateObj = goal.target_date ? new Date(`${goal.target_date}T00:00:00`) : null;
+  const dipInfo = targetDateObj ? goalDipInfo(goal.target_amount, progress, events, targetDateObj) : null;
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -65,10 +102,12 @@ export function GoalViewSheet({
                 >
                   {pace === "on-track" ? (
                     <TrendingUp className="size-3" />
-                  ) : (
+                  ) : pace === "behind" ? (
                     <TrendingDown className="size-3" />
+                  ) : (
+                    <AlertTriangle className="size-3" />
                   )}
-                  {pace === "on-track" ? "On track" : "Behind pace"}
+                  {PACE_LABEL[pace]}
                 </p>
               )}
               {pace === "done" && <p className="text-xs font-medium text-chart-3">Reached</p>}
@@ -89,44 +128,60 @@ export function GoalViewSheet({
               <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${pct}%` }} />
             </div>
             <div className="flex items-baseline justify-between text-sm">
-              <span className="font-semibold tabular-nums">{formatCurrency(contributed, goal.currency)}</span>
+              <span className="font-semibold tabular-nums">{formatCurrency(progress, goal.currency)}</span>
               <span className="text-muted-foreground">
                 of {formatCurrency(goal.target_amount, goal.currency)}
               </span>
             </div>
+            <p className="text-xs text-muted-foreground">
+              Based on your current {formatCurrency(progress, goal.currency)} across your {goal.currency}{" "}
+              accounts.
+            </p>
           </div>
 
-          <div>
-            <p className="mb-2 text-sm font-medium">History</p>
-            {contributions.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No contributions yet.</p>
-            ) : (
-              <div className="space-y-1.5">
-                {contributions.map((c) => (
-                  <div
-                    key={c.id}
-                    className="flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2 text-sm"
-                  >
-                    <span className="text-muted-foreground">
-                      {new Date(`${c.occurred_at}T00:00:00`).toLocaleDateString(undefined, {
-                        month: "short",
-                        day: "numeric",
-                        year: "numeric",
-                      })}
-                    </span>
-                    <span
-                      className={cn(
-                        "font-medium tabular-nums",
-                        c.amount < 0 ? "text-destructive" : "text-chart-3",
-                      )}
-                    >
-                      {c.amount < 0 ? "−" : "+"}
-                      {formatCurrency(Math.abs(c.amount), goal.currency)}
-                    </span>
-                  </div>
-                ))}
-              </div>
+          <GoalForecastChart
+            data={series}
+            targetAmount={goal.target_amount}
+            currency={goal.currency}
+            events={events}
+          />
+
+          <div className="space-y-2 rounded-xl border border-border bg-muted/40 p-4">
+            <p className="text-sm">
+              {remaining <= 0 ? (
+                pace === "at-risk" ? (
+                  <span className="text-destructive">
+                    You have enough right now, but a planned amount leaves you under target by{" "}
+                    {formatProjectedDate(targetDateObj)} -- see the chart above.
+                  </span>
+                ) : (
+                  "You've already reached this goal."
+                )
+              ) : events.length === 0 ? (
+                "Nothing planned yet -- add a recurring income or expense below to see a projection."
+              ) : projected ? (
+                <>
+                  Based on your planned amounts, you&apos;d reach this goal around{" "}
+                  <span className="font-medium">{formatProjectedDate(projected)}</span>.
+                </>
+              ) : (
+                "Your planned amounts don't add up to reaching this goal -- try adding a recurring income."
+              )}
+            </p>
+            {dipInfo && pace !== "at-risk" && (
+              <p className="text-xs text-muted-foreground">
+                Along the way it dips to{" "}
+                <span className="font-medium text-foreground">
+                  {formatCurrency(dipInfo.minBalance, goal.currency)}
+                </span>{" "}
+                around {formatProjectedDate(dipInfo.minDate)} before recovering by your target date --
+                still worth knowing even though you&apos;ll make it.
+              </p>
             )}
+            <p className="text-xs text-muted-foreground">
+              Driven entirely by your planned {goal.currency} amounts -- manage them from the top of
+              the Goals tab.
+            </p>
           </div>
         </div>
         {isOwner && (
@@ -134,7 +189,6 @@ export function GoalViewSheet({
             <Button variant="outline" onClick={onEdit}>
               Edit
             </Button>
-            <Button onClick={onAddContribution}>Add contribution</Button>
           </SheetFooter>
         )}
       </SheetContent>

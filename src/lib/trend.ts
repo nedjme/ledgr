@@ -118,7 +118,10 @@ export function incomeTrendSeries(
   for (const row of rows) {
     if (row.amount < 0) continue;
     const key = bucketKey(new Date(`${row.occurred_at}T00:00:00`), granularity);
-    byKey.set(key, (byKey.get(key) ?? 0) + row.amount);
+    // Number() -- Postgres numeric columns come back from Supabase as
+    // strings, and `+` silently concatenates instead of adding once a
+    // bucket has more than one matching row.
+    byKey.set(key, (byKey.get(key) ?? 0) + Number(row.amount));
   }
 
   return buckets.map(({ key, label }) => ({ label, value: byKey.get(key) ?? 0 }));
@@ -138,7 +141,7 @@ export function cashFlowSeries(
   const spendByKey = new Map<string, number>();
   for (const row of rows) {
     const key = bucketKey(new Date(`${row.occurred_at}T00:00:00`), granularity);
-    if (row.amount >= 0) incomeByKey.set(key, (incomeByKey.get(key) ?? 0) + row.amount);
+    if (row.amount >= 0) incomeByKey.set(key, (incomeByKey.get(key) ?? 0) + Number(row.amount));
     else spendByKey.set(key, (spendByKey.get(key) ?? 0) + Math.abs(row.amount));
   }
 

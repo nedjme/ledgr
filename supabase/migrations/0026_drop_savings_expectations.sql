@@ -1,0 +1,11 @@
+-- The manually-set "expected income/spending" override turned out to
+-- overlap awkwardly with recurring simulation_events once those existed:
+-- your historical average already reflects your current rent, so a
+-- recurring "Rent" event added on top of a manually-set expectation (which
+-- itself was usually just a copy of that same historical average) risked
+-- double-counting it. The historical reference dropdown stays -- it's
+-- useful information -- but the simulation goes back to driving off the
+-- real historical average automatically (SAVINGS_TRAILING_MONTHS) rather
+-- than a saved override. Zero rows ever written to this table, so nothing
+-- to migrate.
+drop table savings_expectations;

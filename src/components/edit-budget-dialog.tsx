@@ -63,9 +63,12 @@ export function EditBudgetDialog({
   const sameCurrencyBudgets = existingBudgets.filter(
     (b) => b.currency.toUpperCase() === currency.toUpperCase(),
   );
+  // Number() -- Postgres numeric columns come back from Supabase as
+  // strings, and `+` silently concatenates instead of adding once there's
+  // more than one existing budget in this currency.
   const categoryTotal = sameCurrencyBudgets
     .filter((b) => b.category_id !== null)
-    .reduce((sum, b) => sum + b.amount, 0);
+    .reduce((sum, b) => sum + Number(b.amount), 0);
   const overallAmount = sameCurrencyBudgets.find((b) => b.category_id === null)?.amount;
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {

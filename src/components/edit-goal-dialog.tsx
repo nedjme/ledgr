@@ -60,7 +60,7 @@ export function EditGoalDialog({
   }
 
   async function onDelete() {
-    if (!confirm("Delete this goal? Its contribution history will be deleted too.")) return;
+    if (!confirm("Delete this goal?")) return;
     setSaving(true);
     const { error: deleteError } = await supabase.from("goals").delete().eq("id", goal.id);
     setSaving(false);

@@ -1,13 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { PiggyBank, TrendingDown, TrendingUp } from "lucide-react";
+import { AlertTriangle, PiggyBank, TrendingDown, TrendingUp } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { EditGoalDialog } from "@/components/edit-goal-dialog";
-import { AddContributionDialog } from "@/components/add-contribution-dialog";
 import { GoalViewSheet } from "@/components/goal-view-sheet";
 import { formatCurrency } from "@/lib/format";
-import { goalProgress, goalPace } from "@/lib/goals";
+import { goalProgress, goalPace, type RecurrenceKind } from "@/lib/goals";
 import { cn } from "@/lib/utils";
 
 type EditableGoal = {
@@ -19,27 +18,39 @@ type EditableGoal = {
   created_at: string;
 };
 
-type Contribution = { id: string; amount: number; occurred_at: string };
+const PACE_LABEL = {
+  "on-track": "On track",
+  behind: "Behind pace",
+  stalled: "Not on pace",
+  "at-risk": "At risk",
+};
 
 export function GoalCard({
   goal,
-  contributed,
-  contributions,
+  progress,
+  events,
   isOwner,
   ownerName,
 }: {
   goal: EditableGoal;
-  contributed: number;
-  contributions: Contribution[];
+  progress: number;
+  events: {
+    id: string;
+    label: string;
+    amount: number;
+    occurs_on: string;
+    category_id: string | null;
+    recurrence: RecurrenceKind;
+    recurrence_end: string | null;
+  }[];
   isOwner: boolean;
   ownerName: string | null;
 }) {
   const [viewOpen, setViewOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
-  const [contributeOpen, setContributeOpen] = useState(false);
 
-  const pct = goalProgress(goal.target_amount, contributed);
-  const pace = goal.target_date ? goalPace(goal.target_amount, contributed, goal.created_at, goal.target_date) : null;
+  const pct = goalProgress(goal.target_amount, progress);
+  const pace = goalPace(goal.target_amount, progress, events, goal.target_date);
 
   return (
     <>
@@ -72,10 +83,12 @@ export function GoalCard({
                 >
                   {pace === "on-track" ? (
                     <TrendingUp className="size-3" />
-                  ) : (
+                  ) : pace === "behind" ? (
                     <TrendingDown className="size-3" />
+                  ) : (
+                    <AlertTriangle className="size-3" />
                   )}
-                  {pace === "on-track" ? "On track" : "Behind pace"}
+                  {PACE_LABEL[pace]}
                 </p>
               )}
               {pace === "done" && <p className="text-xs font-medium text-chart-3">Reached</p>}
@@ -87,7 +100,7 @@ export function GoalCard({
           </div>
 
           <div className="flex items-baseline justify-between text-sm">
-            <span className="font-semibold tabular-nums">{formatCurrency(contributed, goal.currency)}</span>
+            <span className="font-semibold tabular-nums">{formatCurrency(progress, goal.currency)}</span>
             <span className="text-muted-foreground">
               of {formatCurrency(goal.target_amount, goal.currency)}
             </span>
@@ -97,8 +110,8 @@ export function GoalCard({
 
       <GoalViewSheet
         goal={goal}
-        contributed={contributed}
-        contributions={contributions}
+        progress={progress}
+        events={events}
         isOwner={isOwner}
         ownerName={ownerName}
         open={viewOpen}
@@ -107,17 +120,8 @@ export function GoalCard({
           setViewOpen(false);
           setEditOpen(true);
         }}
-        onAddContribution={() => {
-          setViewOpen(false);
-          setContributeOpen(true);
-        }}
       />
-      {isOwner && (
-        <>
-          <EditGoalDialog goal={goal} open={editOpen} onOpenChange={setEditOpen} />
-          <AddContributionDialog goal={goal} open={contributeOpen} onOpenChange={setContributeOpen} />
-        </>
-      )}
+      {isOwner && <EditGoalDialog goal={goal} open={editOpen} onOpenChange={setEditOpen} />}
     </>
   );
 }

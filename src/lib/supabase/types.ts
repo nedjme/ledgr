@@ -237,36 +237,6 @@ export type Database = {
         };
         Relationships: [];
       };
-      goal_contributions: {
-        Row: {
-          id: string;
-          goal_id: string;
-          user_id: string;
-          amount: number;
-          currency: string;
-          occurred_at: string;
-          created_at: string;
-        };
-        Insert: {
-          id?: string;
-          goal_id: string;
-          user_id: string;
-          amount: number;
-          currency?: string;
-          occurred_at?: string;
-          created_at?: string;
-        };
-        Update: {
-          id?: string;
-          goal_id?: string;
-          user_id?: string;
-          amount?: number;
-          currency?: string;
-          occurred_at?: string;
-          created_at?: string;
-        };
-        Relationships: [];
-      };
       description_category_rules: {
         Row: {
           id: string;
@@ -288,6 +258,45 @@ export type Database = {
           pattern?: string;
           category_id?: string;
           updated_at?: string;
+        };
+        Relationships: [];
+      };
+      simulation_events: {
+        Row: {
+          id: string;
+          user_id: string;
+          currency: string;
+          label: string;
+          amount: number;
+          occurs_on: string;
+          category_id: string | null;
+          recurrence: string;
+          recurrence_end: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          currency: string;
+          label: string;
+          amount: number;
+          occurs_on: string;
+          category_id?: string | null;
+          recurrence?: string;
+          recurrence_end?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          currency?: string;
+          label?: string;
+          amount?: number;
+          occurs_on?: string;
+          category_id?: string | null;
+          recurrence?: string;
+          recurrence_end?: string | null;
+          created_at?: string;
         };
         Relationships: [];
       };
@@ -326,4 +335,4 @@ export type Category = Database["public"]["Tables"]["categories"]["Row"];
 export type Transaction = Database["public"]["Tables"]["transactions"]["Row"];
 export type Budget = Database["public"]["Tables"]["budgets"]["Row"];
 export type Goal = Database["public"]["Tables"]["goals"]["Row"];
-export type GoalContribution = Database["public"]["Tables"]["goal_contributions"]["Row"];
+export type SimulationEvent = Database["public"]["Tables"]["simulation_events"]["Row"];
