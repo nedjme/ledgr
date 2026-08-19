@@ -72,12 +72,15 @@ export function BudgetsGoalsTabs({
 }) {
   // Kept in the URL (not local state) so a refresh -- or a link straight to
   // the Goals tab -- lands you back where you were instead of always
-  // reverting to Budgets.
+  // reverting to Budgets. `shallow: true` because switching tabs doesn't
+  // need any new data from the server -- both tabs' content is already
+  // loaded -- so there's no reason to pay for a full navigation just to
+  // flip which one is visible.
   const { params, navigate } = useOptimisticParams();
   const tab = params.tab === "goals" ? "goals" : "budgets";
   function handleTabChange(v: string | null) {
     if (!v) return;
-    navigate((p) => p.set("tab", v));
+    navigate((p) => p.set("tab", v), { shallow: true });
   }
   // Budgets can only be scoped to a top-level category -- its spend already
   // rolls up subcategory totals, so a subcategory-specific budget would
