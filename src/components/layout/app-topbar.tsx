@@ -13,6 +13,7 @@ import {
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { createClient } from "@/lib/supabase/client";
+import { useOptimisticParams } from "@/lib/use-optimistic-params";
 
 function initialsOf(name: string) {
   return name
@@ -29,7 +30,6 @@ const TITLES: { test: (path: string) => boolean; title: string }[] = [
   { test: (p) => p.startsWith("/accounts/import"), title: "Import statement" },
   { test: (p) => p.startsWith("/accounts"), title: "Accounts" },
   { test: (p) => p.startsWith("/transactions"), title: "Transactions" },
-  { test: (p) => p.startsWith("/budgets"), title: "Budgets & Goals" },
   { test: (p) => p.startsWith("/settings"), title: "Settings" },
 ];
 
@@ -43,7 +43,15 @@ export function AppTopbar({
   const pathname = usePathname();
   const router = useRouter();
   const supabase = createClient();
-  const title = TITLES.find((t) => t.test(pathname))?.title ?? "Ledgr";
+  // /budgets hosts both the Budgets and Goals tabs (see budgets-goals-tabs.tsx),
+  // so its title tracks the same URL `tab` param the tabs themselves read --
+  // switching tabs updates the heading in step, not just the content below it.
+  const { params } = useOptimisticParams();
+  const title = pathname.startsWith("/budgets")
+    ? params.tab === "goals"
+      ? "Goals"
+      : "Budgets"
+    : (TITLES.find((t) => t.test(pathname))?.title ?? "Ledgr");
 
   return (
     <header className="sticky top-0 z-20 flex items-center justify-between gap-4 border-b border-border/80 bg-card/90 px-4 py-4 shadow-sm backdrop-blur md:px-8">

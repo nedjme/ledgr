@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useOptimisticParams } from "@/lib/use-optimistic-params";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Card, CardContent } from "@/components/ui/card";
 import { AddBudgetDialog } from "@/components/add-budget-dialog";
@@ -70,7 +70,15 @@ export function BudgetsGoalsTabs({
   currentUserId: string;
   nameById: Map<string, string>;
 }) {
-  const [tab, setTab] = useState("budgets");
+  // Kept in the URL (not local state) so a refresh -- or a link straight to
+  // the Goals tab -- lands you back where you were instead of always
+  // reverting to Budgets.
+  const { params, navigate } = useOptimisticParams();
+  const tab = params.tab === "goals" ? "goals" : "budgets";
+  function handleTabChange(v: string | null) {
+    if (!v) return;
+    navigate((p) => p.set("tab", v));
+  }
   // Budgets can only be scoped to a top-level category -- its spend already
   // rolls up subcategory totals, so a subcategory-specific budget would
   // just double-count against its parent's. `categories` (own + a
@@ -115,7 +123,7 @@ export function BudgetsGoalsTabs({
   }
 
   return (
-    <Tabs value={tab} onValueChange={(v) => v && setTab(v)}>
+    <Tabs value={tab} onValueChange={handleTabChange}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <TabsList>
           <TabsTrigger value="budgets">Budgets</TabsTrigger>
