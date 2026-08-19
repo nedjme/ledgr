@@ -32,7 +32,7 @@ export function AddTransactionDialog({
   householdId,
 }: {
   accounts: Pick<Account, "id" | "name" | "currency">[];
-  categories: Pick<Category, "id" | "name">[];
+  categories: Pick<Category, "id" | "name" | "parent_id">[];
   householdId: string | null;
 }) {
   const router = useRouter();

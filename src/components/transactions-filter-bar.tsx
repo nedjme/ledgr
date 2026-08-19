@@ -14,7 +14,7 @@ export function TransactionsFilterBar({
   showScope,
   q,
 }: {
-  categories: { id: string; name: string }[];
+  categories: { id: string; name: string; parent_id?: string | null }[];
   showScope: boolean;
   q: string;
 }) {

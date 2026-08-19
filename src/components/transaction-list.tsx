@@ -23,7 +23,7 @@ export type TransactionRow = {
 type EditableContext = {
   currentUserId: string;
   accounts: { id: string; name: string; currency: string }[];
-  categories: { id: string; name: string }[];
+  categories: { id: string; name: string; parent_id?: string | null }[];
 };
 
 function formatDayHeading(dateStr: string) {

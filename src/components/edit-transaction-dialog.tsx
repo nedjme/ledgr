@@ -45,7 +45,7 @@ export function EditTransactionDialog({
   transaction: EditableTransaction;
   currentUserId: string;
   accounts: { id: string; name: string; currency: string }[];
-  categories: { id: string; name: string }[];
+  categories: { id: string; name: string; parent_id?: string | null }[];
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
