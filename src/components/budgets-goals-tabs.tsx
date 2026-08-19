@@ -43,6 +43,7 @@ export function BudgetsGoalsTabs({
   budgets,
   goals,
   categories,
+  ownCategories,
   defaultCurrency,
   householdId,
   currentUserId,
@@ -51,6 +52,7 @@ export function BudgetsGoalsTabs({
   budgets: BudgetWithSpend[];
   goals: GoalWithProgress[];
   categories: BudgetCategory[];
+  ownCategories: BudgetCategory[];
   defaultCurrency: string;
   householdId: string | null;
   currentUserId: string;
@@ -59,8 +61,12 @@ export function BudgetsGoalsTabs({
   const [tab, setTab] = useState("budgets");
   // Budgets can only be scoped to a top-level category -- its spend already
   // rolls up subcategory totals, so a subcategory-specific budget would
-  // just double-count against its parent's.
+  // just double-count against its parent's. `categories` (own + a
+  // household member's, read-only) resolves every shown budget's label;
+  // `ownCategories` is the narrower list offered as picker choices, since
+  // a budget can only be scoped to a category you own.
   const topLevelCategories = categories.filter((c) => c.parent_id === null);
+  const topLevelOwnCategories = ownCategories.filter((c) => c.parent_id === null);
   const categoryById = new Map(topLevelCategories.map((c) => [c.id, c]));
 
   return (
@@ -72,7 +78,7 @@ export function BudgetsGoalsTabs({
         </TabsList>
         {tab === "budgets" ? (
           <AddBudgetDialog
-            categories={topLevelCategories}
+            categories={topLevelOwnCategories}
             defaultCurrency={defaultCurrency}
             householdId={householdId}
           />
@@ -97,7 +103,7 @@ export function BudgetsGoalsTabs({
                 category={budget.category_id ? (categoryById.get(budget.category_id) ?? null) : null}
                 spent={budget.spent}
                 weeklyBreakdown={budget.weeklyBreakdown}
-                categories={topLevelCategories}
+                categories={topLevelOwnCategories}
                 isOwner={budget.user_id === currentUserId}
                 ownerName={budget.user_id === currentUserId ? null : (nameById.get(budget.user_id) ?? null)}
               />

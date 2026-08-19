@@ -127,12 +127,20 @@ async function HouseholdDashboardData({
 
   const [
     { data: categories },
+    { data: ownCategories },
     { data: accounts },
     { data: members },
     { data: transactions },
     { data: compareTransactions },
   ] = await Promise.all([
-    supabase.from("categories").select("id, name, icon, color, parent_id").eq("household_id", householdId),
+    // No ownership filter -- RLS returns the caller's own categories
+    // unioned with every household member's, read-only, which is exactly
+    // the set needed to label every member's transactions on this page.
+    supabase.from("categories").select("id, name, icon, color, parent_id"),
+    // Own-only -- feeds the editable row dropdown, which only ever applies
+    // to your own transactions (see TransactionList's canEdit), so a
+    // partner's similarly-named categories shouldn't show up as choices.
+    supabase.from("categories").select("id, name, icon, color, parent_id").eq("user_id", userId),
     supabase.from("accounts").select("id, name, currency").eq("user_id", userId),
     supabase.from("household_members").select("user_id").eq("household_id", householdId),
     supabase
@@ -476,7 +484,7 @@ async function HouseholdDashboardData({
                 category_name: t.category_id ? categoryById.get(t.category_id)?.name ?? null : null,
                 owner_name: nameById.get(t.user_id) ?? null,
               }))}
-              editable={{ currentUserId: userId, accounts: accounts ?? [], categories: categories ?? [] }}
+              editable={{ currentUserId: userId, accounts: accounts ?? [], categories: ownCategories ?? [] }}
             />
           </CardContent>
         </Card>

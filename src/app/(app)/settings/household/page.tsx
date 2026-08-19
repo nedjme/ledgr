@@ -44,7 +44,7 @@ export default async function HouseholdSettingsPage() {
     supabase
       .from("categories")
       .select("id, name, icon, color, parent_id")
-      .or(household ? `household_id.eq.${household.id}` : "household_id.is.null")
+      .eq("user_id", user.id)
       .order("name"),
   ]);
 
@@ -71,7 +71,7 @@ export default async function HouseholdSettingsPage() {
         currentUserId={user.id}
         origin={origin}
       />
-      <CategoryManager categories={categories ?? []} householdId={household?.id ?? null} />
+      <CategoryManager categories={categories ?? []} userId={user.id} />
 
       <Card className="border-destructive/30">
         <CardHeader>

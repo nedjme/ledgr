@@ -9,10 +9,7 @@ export default async function ImportPage() {
 
   const [{ data: accounts }, { data: categories }] = await Promise.all([
     supabase.from("accounts").select("id, name").eq("user_id", user.id).order("name"),
-    supabase
-      .from("categories")
-      .select("id, name")
-      .or(household ? `household_id.eq.${household.id}` : "household_id.is.null"),
+    supabase.from("categories").select("id, name").eq("user_id", user.id),
   ]);
 
   return (

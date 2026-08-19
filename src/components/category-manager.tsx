@@ -276,10 +276,10 @@ function NestCategoryDialog({
 
 export function CategoryManager({
   categories,
-  householdId,
+  userId,
 }: {
   categories: CategoryRow[];
-  householdId: string | null;
+  userId: string;
 }) {
   const router = useRouter();
   const supabase = createClient();
@@ -297,7 +297,7 @@ export function CategoryManager({
       name: name.trim(),
       icon: icon.trim() || null,
       color,
-      household_id: householdId,
+      user_id: userId,
     });
     setName("");
     setIcon("");

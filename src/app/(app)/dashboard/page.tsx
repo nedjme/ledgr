@@ -64,7 +64,7 @@ export default async function DashboardPage({
     supabase
       .from("categories")
       .select("id, name, icon, color, parent_id")
-      .or(household ? `household_id.eq.${household.id}` : "household_id.is.null"),
+      .eq("user_id", user.id),
   ]);
 
   return (

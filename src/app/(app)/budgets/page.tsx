@@ -19,16 +19,21 @@ export default async function BudgetsPage() {
   const [
     { data: accounts },
     { data: categories },
+    { data: ownCategories },
     { data: budgets },
     { data: goals },
     { data: transactions },
     { data: members },
   ] = await Promise.all([
     supabase.from("accounts").select("currency").eq("user_id", user.id),
+    supabase.from("categories").select("id, name, icon, color, parent_id").order("name"),
+    // Own-only -- feeds the Add/Edit budget dialogs' category picker. A
+    // budget can only be scoped to a category you own, so a household
+    // member's similarly-named categories shouldn't show up as choices.
     supabase
       .from("categories")
       .select("id, name, icon, color, parent_id")
-      .or(household ? `household_id.eq.${household.id}` : "household_id.is.null")
+      .eq("user_id", user.id)
       .order("name"),
     supabase
       .from("budgets")
@@ -108,6 +113,7 @@ export default async function BudgetsPage() {
       budgets={budgetsWithSpend}
       goals={goalsWithProgress}
       categories={categories ?? []}
+      ownCategories={ownCategories ?? []}
       defaultCurrency={defaultCurrency}
       householdId={household?.id ?? null}
       currentUserId={user.id}

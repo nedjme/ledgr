@@ -195,7 +195,7 @@ Deno.serve(async (req) => {
     const { data: categories } = await supabase
       .from("categories")
       .select("id, name")
-      .or(householdId ? `household_id.eq.${householdId}` : "household_id.is.null");
+      .eq("user_id", user.id);
     const categoryIdByName = new Map((categories ?? []).map((c) => [c.name, c.id]));
 
     // Resolve a category name to an id, creating it (and caching it for the
@@ -208,7 +208,7 @@ Deno.serve(async (req) => {
 
       const { data: created, error: createError } = await supabase
         .from("categories")
-        .insert({ name, household_id: householdId })
+        .insert({ name, user_id: user.id })
         .select("id")
         .single();
       if (createError || !created) return null;

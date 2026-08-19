@@ -60,10 +60,13 @@ export default async function TransactionsPage({
   // that one remounts on every keystroke (see its key), which would blow
   // away the filter bar's own search-input state if the two were merged.
   const supabase = await createClient();
+  // Own categories only -- this feeds the filter bar's search/pick combobox,
+  // and a household member's categories (however similarly named) aren't
+  // meaningful choices to filter *your own* transactions by.
   const { data: categories } = await supabase
     .from("categories")
     .select("id, name, icon, color, parent_id")
-    .or(household ? `household_id.eq.${household.id}` : "household_id.is.null")
+    .eq("user_id", user.id)
     .order("name");
 
   return (
@@ -134,11 +137,19 @@ async function TransactionsData({
 
   const supabase = await createClient();
 
-  const [{ data: categories }, { data: accounts }] = await Promise.all([
+  // `categories` has no ownership filter -- RLS returns own categories
+  // unioned with a household member's, read-only, which is what resolving
+  // a household-scoped transaction's category (and the subcategory
+  // widening below) needs. `ownCategories` is the narrower, own-only list
+  // for the editable row dropdown -- editing only ever applies to your own
+  // transactions (see TransactionList's canEdit), so a partner's
+  // similarly-named categories have no business showing up as choices there.
+  const [{ data: categories }, { data: ownCategories }, { data: accounts }] = await Promise.all([
+    supabase.from("categories").select("id, name, icon, color, parent_id").order("name"),
     supabase
       .from("categories")
       .select("id, name, icon, color, parent_id")
-      .or(householdId ? `household_id.eq.${householdId}` : "household_id.is.null")
+      .eq("user_id", userId)
       .order("name"),
     supabase.from("accounts").select("id, name, currency").eq("user_id", userId),
   ]);
@@ -346,7 +357,7 @@ async function TransactionsData({
               category_name: t.category_id ? categoryById.get(t.category_id)?.name ?? null : null,
               owner_name: scope === "household" ? nameById.get(t.user_id) ?? null : null,
             }))}
-            editable={{ currentUserId: userId, accounts: accounts ?? [], categories: categories ?? [] }}
+            editable={{ currentUserId: userId, accounts: accounts ?? [], categories: ownCategories ?? [] }}
           />
         </CardContent>
       </Card>

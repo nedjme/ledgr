@@ -113,7 +113,7 @@ export type Database = {
       categories: {
         Row: {
           id: string;
-          household_id: string | null;
+          user_id: string;
           name: string;
           icon: string | null;
           color: string | null;
@@ -121,7 +121,7 @@ export type Database = {
         };
         Insert: {
           id?: string;
-          household_id?: string | null;
+          user_id: string;
           name: string;
           icon?: string | null;
           color?: string | null;
@@ -129,7 +129,7 @@ export type Database = {
         };
         Update: {
           id?: string;
-          household_id?: string | null;
+          user_id?: string;
           name?: string;
           icon?: string | null;
           color?: string | null;
