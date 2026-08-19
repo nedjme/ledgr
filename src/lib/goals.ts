@@ -1,4 +1,4 @@
-import { subMonths, addWeeks, addMonths, addYears, formatISO } from "date-fns";
+import { subMonths, addWeeks, addMonths, addYears, subDays, formatISO, startOfDay } from "date-fns";
 
 export function goalProgress(targetAmount: number, progress: number): number {
   if (targetAmount <= 0) return 0;
@@ -93,6 +93,13 @@ export function expandRecurringEvents(
   horizon: Date,
   from = new Date(),
 ): SimulationEvent[] {
+  // occurs_on/recurrence_end are pure dates -- every occurrence below is
+  // built at midnight. Comparing that against a raw `from` (real
+  // wall-clock time, always later than midnight on the same day) would
+  // silently drop anything happening "today," including the very first
+  // occurrence of a recurring event that starts today. Normalizing once
+  // here makes "today" actually mean today.
+  from = startOfDay(from);
   const expanded: SimulationEvent[] = [];
   for (const e of events) {
     // Number() -- Postgres numeric columns come back from Supabase as
@@ -166,6 +173,7 @@ export function simulateCompletionDate(
 ): Date | null {
   if (remainingAmount <= 0) return from;
 
+  from = startOfDay(from);
   const horizon = addYears(from, MAX_SIMULATION_YEARS);
   const flatEvents = expandRecurringEvents(events, horizon, from);
   const sortedEvents = flatEvents
@@ -208,10 +216,14 @@ function projectBalancePath(
   until: Date,
   from = new Date(),
 ): BalancePath {
+  from = startOfDay(from);
   const flatEvents = expandRecurringEvents(events, until, from);
   const sortedEvents = flatEvents
     .map((e) => ({ amount: e.amount, date: new Date(`${e.occurs_on}T00:00:00`) }))
-    .filter((e) => e.date > from && e.date <= until)
+    // >= from, not > -- progress is the real current balance, which
+    // doesn't yet include a planned event dated today (that's the whole
+    // point of planning it), so today's events are still "ahead."
+    .filter((e) => e.date >= from && e.date <= until)
     .sort((a, b) => a.date.getTime() - b.date.getTime());
 
   let balance = progress;
@@ -281,6 +293,10 @@ export function goalDipInfo(
 
 export type TimelinePoint = { timestamp: number; date: string; balance: number };
 
+// Purely cosmetic lead-in so an event dated today still has a visible
+// "before" state to its left -- see goalTimelineSeries's own comment.
+const LEADING_CONTEXT_DAYS = 5;
+
 // Balance trajectory from `startingBalance` -- flat except for a sharp step
 // at each event's date (an exact before/after pair of points), since
 // there's no implicit background rate anymore: nothing moves the balance
@@ -291,14 +307,24 @@ export function goalTimelineSeries(
   horizon: Date,
   from = new Date(),
 ): TimelinePoint[] {
+  from = startOfDay(from);
   const flatEvents = expandRecurringEvents(events, horizon, from);
   const sortedEvents = flatEvents
     .map((e) => ({ amount: e.amount, date: new Date(`${e.occurs_on}T00:00:00`) }))
-    .filter((e) => e.date > from && e.date <= horizon)
+    // >= from, not > -- an event dated today hasn't happened yet as far as
+    // the real (already-fetched) starting balance is concerned, so it
+    // still belongs in the projection, not just anything strictly later.
+    .filter((e) => e.date >= from && e.date <= horizon)
     .sort((a, b) => a.date.getTime() - b.date.getTime());
 
   const points: { date: Date; balance: number }[] = [];
   let balance = startingBalance;
+  // A few days of flat lead-in before "today" -- an event dated today is
+  // the earliest thing the projection can show, so without this the jump
+  // would land right on the chart's left edge with nothing to its left,
+  // reading as "the balance was already this high" instead of a visible
+  // rise from where it actually started.
+  points.push({ date: subDays(from, LEADING_CONTEXT_DAYS), balance });
   points.push({ date: from, balance });
 
   for (const event of sortedEvents) {
