@@ -69,7 +69,7 @@ export default async function DashboardPage({
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="order-2 flex flex-wrap items-center justify-between gap-3">
+      <div className="order-2 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
         <PeriodToggle allowYear allowCustom />
         <AddTransactionDialog
           accounts={accounts ?? []}

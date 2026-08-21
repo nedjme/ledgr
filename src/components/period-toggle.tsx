@@ -124,7 +124,7 @@ export function PeriodToggle({
   );
 
   return (
-    <Card size="sm" className="flex-1 gap-3 overflow-hidden px-3 pt-0 sm:pt-3">
+    <Card size="sm" className="w-full gap-3 overflow-hidden px-3 pt-0 sm:w-auto sm:pt-3">
       {/* Full-bleed on mobile -- flush against the card's top/left/right
           edges instead of sitting inset with the rest of the toolbar, so
           it reads as the card's own top bar rather than just another
